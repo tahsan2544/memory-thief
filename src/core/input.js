@@ -16,6 +16,11 @@ export class Input {
     this.wheel = 0;
     this.locked = false;
     this._enabled = true;
+    // combat input: mouse buttons (0 LMB · 1 MMB · 2 RMB). Only recorded while
+    // the pointer is locked, so the click that *captures* the mouse can never
+    // double as the swing that starts a fight.
+    this.mouseDown = new Set();
+    this.mousePressed = [];
 
     this._onKeyDown = (e) => {
       const t = e.target;
@@ -36,6 +41,8 @@ export class Input {
     this._resetHeld = () => {
       this.down.clear();
       this.pressed.length = 0;
+      this.mouseDown.clear();
+      this.mousePressed.length = 0;
       this.mouseX = 0;
       this.mouseY = 0;
       this.wheel = 0;
@@ -51,6 +58,16 @@ export class Input {
       this.mouseX += e.movementX || 0;
       this.mouseY += e.movementY || 0;
     };
+    this._onMouseDown = (e) => {
+      if (!this.locked) return; // an unlocked click belongs to pointer-lock
+      if (!this.mouseDown.has(e.button)) {
+        this.mouseDown.add(e.button);
+        this.mousePressed.push(e.button);
+      }
+      // button 2 (RMB) is the guard: never let it select text behind the canvas
+      if (e.button === 2) e.preventDefault();
+    };
+    this._onMouseUp = (e) => this.mouseDown.delete(e.button);
     this._onWheel = (e) => {
       if (!this.locked) return;
       this.wheel += e.deltaY;
@@ -66,6 +83,8 @@ export class Input {
     window.addEventListener('blur', this._onBlur);
     document.addEventListener('visibilitychange', this._onVisibility);
     document.addEventListener('mousemove', this._onMouseMove);
+    document.addEventListener('mousedown', this._onMouseDown);
+    window.addEventListener('mouseup', this._onMouseUp);
     document.addEventListener('pointerlockchange', this._onLockChange);
     target.addEventListener('wheel', this._onWheel, { passive: false });
   }
@@ -103,6 +122,18 @@ export class Input {
     return v;
   }
 
+  /** Buttons pressed since the last call (0 LMB · 1 MMB · 2 RMB). */
+  consumeMousePressed() {
+    const v = this.mousePressed;
+    this.mousePressed = [];
+    return v;
+  }
+
+  /** Is a mouse button currently held? */
+  isMouseDown(button) {
+    return this.mouseDown.has(button);
+  }
+
   /* ------------------------ test injection (headless) ------------------- *
    * Used by scripts/smoke.mjs: real pointer lock is unreliable in headless
    * Edge, so tests drive the same state the event handlers write to.
@@ -125,6 +156,23 @@ export class Input {
     this.pressed.push(code);
   }
 
+  /** Hold or release a mouse button programmatically (headless combat tests). */
+  setMouseButton(button, down) {
+    if (down) {
+      if (!this.mouseDown.has(button)) {
+        this.mouseDown.add(button);
+        this.mousePressed.push(button);
+      }
+    } else {
+      this.mouseDown.delete(button);
+    }
+  }
+
+  /** Queue a single mouse-button press without holding it. */
+  injectMousePress(button) {
+    this.mousePressed.push(button);
+  }
+
   /** Accumulate mouse delta as if the pointer were locked. */
   simulateMouse(dx, dy) {
     this.mouseX += dx;
@@ -141,6 +189,8 @@ export class Input {
     window.removeEventListener('blur', this._onBlur);
     document.removeEventListener('visibilitychange', this._onVisibility);
     document.removeEventListener('mousemove', this._onMouseMove);
+    document.removeEventListener('mousedown', this._onMouseDown);
+    window.removeEventListener('mouseup', this._onMouseUp);
     document.removeEventListener('pointerlockchange', this._onLockChange);
     this.target.removeEventListener('wheel', this._onWheel);
   }

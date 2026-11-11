@@ -52,6 +52,19 @@ export class PlayerController {
     this._wishX = 0;
     this._wishZ = 0;
 
+    // Combat hooks (Phase 2) — kept inert by default so movement is
+    // byte-identical to the pre-combat controller:
+    //   speedScale  attack/dodge slow-down applied to the movement cap
+    //   faceTarget  lock-on heading the body holds while engaged
+    //   impulse     driven dodge roll / hit knockback (dir × speed × duration)
+    this.speedScale = 1;
+    this.faceTarget = null;
+    this.impulseX = 0;
+    this.impulseZ = 0;
+    this.impulseSpeed = 0;
+    this.impulseT = 0;
+    this.impulseDur = 0;
+
     // Phase 7 — presentation callbacks wired from main.js:
     //   onStep(isRun)  fires on each stride heel-strike (footstep audio)
     //   onLand()       fires when a fall touches down (landing thud)
@@ -81,6 +94,9 @@ export class PlayerController {
     this.grounded = true;
     this.coyote = 0;
     this.facing = yaw;
+    this.speedScale = 1;
+    this.faceTarget = null;
+    this.impulseT = 0;
     this.animator.reset();
     this.rig.group.position.set(x, y, z);
     this.rig.group.rotation.y = yaw;
@@ -143,7 +159,8 @@ export class PlayerController {
       (input.isDown('ControlLeft') || input.isDown('ControlRight'));
     this.crouching = crouching;
     const walkNow = crouching ? this.walkSpeed * 0.45 : this.walkSpeed;
-    const maxSpeed = sprinting ? this.runSpeed : walkNow;
+    // combat swings/dodges scale the cap (setSpeedScale); 1 = untouched
+    const maxSpeed = (sprinting ? this.runSpeed : walkNow) * this.speedScale;
 
     const b = this.cameraRig.basis;
     const wishX = (b.fx * iz + b.rx * ix) * maxSpeed;
@@ -153,14 +170,23 @@ export class PlayerController {
     const moving = mag > 1e-4;
 
     for (let step = 0; step < steps; step++) {
-      // ---- acceleration ---------------------------------------------------
-      let rate;
-      if (!this.grounded) rate = 5;
-      else if (moving) rate = 14;
-      else rate = 18;
-      const k = 1 - Math.exp(-rate * h);
-      this.velocity.x += (wishX - this.velocity.x) * k;
-      this.velocity.z += (wishZ - this.velocity.z) * k;
+      if (this.impulseT > 0) {
+        // driven dodge roll / hit knockback: the impulse owns the velocity
+        // (a gentle ease-out so the roll decelerates instead of stopping dead)
+        const k = 1 - Math.min(1, this.impulseT / this.impulseDur);
+        const s = this.impulseSpeed * (1 - k * (this._impulseEase ?? 0.6));
+        this.velocity.x = this.impulseX * s;
+        this.velocity.z = this.impulseZ * s;
+      } else {
+        // ---- acceleration ---------------------------------------------------
+        let rate;
+        if (!this.grounded) rate = 5;
+        else if (moving) rate = 14;
+        else rate = 18;
+        const k = 1 - Math.exp(-rate * h);
+        this.velocity.x += (wishX - this.velocity.x) * k;
+        this.velocity.z += (wishZ - this.velocity.z) * k;
+      }
 
       // ---- jump / gravity (the Space press fires on the first substep) ----
       if (!frozen && step === 0 && pressed?.includes('Space') && (this.grounded || this.coyote > 0)) {
@@ -206,10 +232,14 @@ export class PlayerController {
       if (this.position.y > apex) apex = this.position.y;
     }
     this.apexY = apex;
+    if (this.impulseT > 0) this.impulseT = Math.max(0, this.impulseT - budget);
 
     // ---- facing + presentation (one pass per frame, on the real span) ----
     const speed = this.speed;
-    if (speed > 0.6) {
+    if (this.faceTarget != null) {
+      // lock-on: the body holds the target's heading while engaged
+      this.facing = angleLerp(this.facing, this.faceTarget, 1 - Math.exp(-11 * budget));
+    } else if (speed > 0.6) {
       this.facing = angleLerp(this.facing, Math.atan2(this.velocity.x, this.velocity.z), 1 - Math.exp(-12 * budget));
     } else if (moving) {
       this.facing = angleLerp(this.facing, Math.atan2(wishX, wishZ), 1 - Math.exp(-14 * budget));
@@ -259,6 +289,42 @@ export class PlayerController {
     this.animator.fireGesture(name);
   }
 
+  /* ---- combat hooks (Phase 2) ---------------------------------------- */
+
+  /** Scale the movement cap (1 = untouched). Attacks swing at 0.4, etc. */
+  setSpeedScale(k) {
+    this.speedScale = Math.max(0, Number.isFinite(k) ? k : 1);
+  }
+
+  /** Lock-on heading (radians) the body holds, or null to hand back to velocity. */
+  setFaceTarget(yaw) {
+    this.faceTarget = Number.isFinite(yaw) ? yaw : null;
+  }
+
+  /**
+   * Driven dodge roll / knockback: velocity becomes `dir × speed` for
+   * `dur` seconds with a soft ease-out. Grounded motion only.
+   */
+  impulse(dirX, dirZ, speed, dur, easeOut = 0.6) {
+    const m = Math.hypot(dirX, dirZ) || 1;
+    this.impulseX = dirX / m;
+    this.impulseZ = dirZ / m;
+    this.impulseSpeed = speed;
+    this.impulseDur = Math.max(0.05, dur);
+    this.impulseT = this.impulseDur;
+    this._impulseEase = easeOut;
+  }
+
+  /** Hold (or release) the current style's guard stance. */
+  setGuard(on, pose = null) {
+    this.animator.setGuard(on, pose);
+  }
+
+  /** Fire a one-shot combat strike envelope (see CharacterAnimator.strike). */
+  strike(kind = 'jab', dur = 0.42) {
+    this.animator.strike(kind, dur);
+  }
+
   snapshot() {
     const r3 = (v) => Math.round(v * 1000) / 1000;
     const c = this.animator.c;
@@ -274,6 +340,15 @@ export class PlayerController {
       facing: this.facing,
       state: this.animator.state,
       active: this.active,
+      // live combat posture — smoke reads this instead of inferring swings
+      combat: {
+        speedScale: Math.round(this.speedScale * 100) / 100,
+        guard: this.animator.guard > 0.5,
+        guardPose: this.animator.guardPose,
+        strike: this.animator.strikeKind,
+        locked: this.faceTarget != null,
+        impulse: this.impulseT > 0,
+      },
       // simulated seconds so far — Δsim ÷ Δwall is the pacing ratio smoke watches
       sim: this.simSeconds,
       // live gait channels — proof the rig is actually articulating

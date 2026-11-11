@@ -18,6 +18,9 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// the checkpoint schema version lives with the schema — the suite pins the
+// *current* one, not a number that goes stale every time a block is added
+import { SAVE_VERSION } from '../src/progression/saveManager.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..');
@@ -1520,7 +1523,7 @@ async function runProgressionTests(page, errors, warnings) {
   let doc = null;
   try { doc = JSON.parse(raw); } catch { doc = null; }
   check('checkpoint carries every progress system',
-    !!doc && doc.v === 1 && !!doc.player && !!doc.memories && !!doc.discovery && !!doc.progression && typeof doc.seed === 'string'
+    !!doc && doc.v === SAVE_VERSION && !!doc.player && !!doc.memories && !!doc.discovery && !!doc.progression && typeof doc.seed === 'string'
       && doc.grid === 12 && Number.isFinite(doc.density), // the city's shape rides along
     raw ? `${raw.length} bytes · grid ${doc?.grid} × density ${doc?.density}` : 'missing');
   check('checkpoint records the player position',

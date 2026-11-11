@@ -35,6 +35,112 @@ const GESTURES = {
   wave: { armR: -1.55, elbowR: 0.15, armOutR: 0.45, torsoY: 0.1, dur: 1.4 },
 };
 
+/**
+ * Combat guard stances — one per style `guardPose` (docs/GAME-DESIGN.md §4).
+ * Sustained and additive, exactly like the channel pose: they sit on top of
+ * locomotion and can never break it. Negative armX = raised forward.
+ */
+const GUARD_POSES = {
+  square: { armR: -0.9, armL: -0.8, elbowR: 1.15, elbowL: 1.15, torsoY: -0.12, headX: 0.06 },
+  boxer: { armR: -1.15, armL: -1.05, elbowR: 1.5, elbowL: 1.5, torsoY: -0.16, torsoX: 0.06, headX: 0.08 },
+  'open-hand': { armR: -1.0, armL: -1.1, elbowR: 0.9, elbowL: 1.0, armOutR: 0.22, armOutL: 0.2, torsoY: -0.2 },
+  crane: { armR: -1.25, armL: -1.2, elbowR: 0.6, elbowL: 0.6, armOutR: 0.35, armOutL: 0.33, torsoY: -0.1 },
+  'side-on': { armR: -1.0, armL: -1.25, elbowR: 1.2, elbowL: 0.7, torsoY: -0.35, hipsRotY: -0.18 },
+  'high-guard': { armR: -1.4, armL: -1.35, elbowR: 1.7, elbowL: 1.7, torsoX: 0.08, headX: 0.12 },
+  'low-crouch': { armR: -0.7, armL: -0.65, elbowR: 1.0, elbowL: 1.0, torsoX: 0.28, headX: -0.1 },
+  loose: { armR: -0.7, armL: -0.6, elbowR: 0.9, elbowL: 0.85, armOutR: 0.16, torsoY: -0.08 },
+  'blade-forward': { armR: -1.2, armL: -0.5, elbowR: 0.5, elbowL: 1.3, armOutR: 0.1, torsoY: -0.26 },
+  'staff-vertical': { armR: -0.95, armL: -1.05, elbowR: 0.85, elbowL: 0.8, armOutR: 0.28, armOutL: 0.24, torsoY: -0.14 },
+  'bladed-low': { armR: -0.8, armL: -0.7, elbowR: 1.05, elbowL: 1.35, torsoY: -0.2, torsoX: 0.1 },
+  'armed-channel': { armR: -1.1, armL: -0.85, elbowR: 1.0, elbowL: 1.2, torsoY: -0.18, headX: 0.05 },
+  brace: { armR: -1.0, armL: -0.95, elbowR: 1.3, elbowL: 1.25, torsoX: -0.1, hipsY: -0.05 },
+  'bladed-lean': { armR: -1.05, armL: -0.75, elbowR: 0.95, elbowL: 1.1, torsoY: -0.3, torsoX: 0.12, hipsRotY: -0.14 },
+};
+
+/**
+ * One-shot strike envelopes. Each kind shapes the arms, torso and head over
+ * the swing: `w` runs 0 → 1 (peak extension, ~60% through) → 0.
+ * Negative armX reaches forward — the same sign convention as GESTURES.
+ */
+function applyStrike(t, kind, w) {
+  switch (kind) {
+    case 'jab':
+      t.armR += -1.6 * w;
+      t.elbowR += -0.9 * w;
+      t.torsoY += -0.3 * w;
+      t.hipsRotY += -0.12 * w;
+      t.headX += 0.05 * w;
+      break;
+    case 'cross':
+      t.armR += -1.75 * w;
+      t.elbowR += -0.85 * w;
+      t.torsoY += -0.5 * w;
+      t.hipsRotY += -0.22 * w;
+      t.torsoX += 0.1 * w;
+      break;
+    case 'hook':
+      t.armR += -1.35 * w;
+      t.elbowR += 0.9 * w;
+      t.armOutR += 0.55 * w;
+      t.torsoY += 0.35 * w;
+      t.hipsRotY += 0.2 * w;
+      break;
+    case 'heavy':
+      t.armR += -1.95 * w;
+      t.elbowR += 1.25 - 1.6 * w;
+      t.torsoX += 0.22 * w;
+      t.torsoY += -0.45 * w;
+      t.armOutR += 0.3 * w;
+      break;
+    case 'special':
+      t.armR += -1.7 * w;
+      t.armL += -1.1 * w;
+      t.elbowR += -0.6 * w;
+      t.elbowL += -0.4 * w;
+      t.torsoX += 0.16 * w;
+      t.torsoY += -0.35 * w;
+      break;
+    case 'kick':
+      t.legR += -1.15 * w;
+      t.kneeR += -0.85 * w;
+      t.torsoX += -0.3 * w;
+      t.armL += 0.5 * w;
+      t.armR += 0.35 * w;
+      break;
+    case 'dodge':
+      t.hipsY += -0.22 * w;
+      t.kneeL += 1.1 * w;
+      t.kneeR += 0.9 * w;
+      t.legL += 0.5 * w;
+      t.legR += 0.35 * w;
+      t.torsoX += 0.42 * w;
+      t.headX += 0.18 * w;
+      t.armL += -0.6 * w;
+      t.armR += -0.55 * w;
+      break;
+    case 'stagger':
+      t.torsoX += -0.55 * w;
+      t.headX += -0.35 * w;
+      t.armR += 0.7 * w;
+      t.armL += 0.55 * w;
+      t.armOutR += 0.35 * w;
+      t.armOutL += 0.3 * w;
+      t.kneeL += 0.5 * w;
+      t.kneeR += 0.4 * w;
+      break;
+    case 'block':
+      t.torsoX += -0.16 * w;
+      t.armR += -0.3 * w;
+      t.armL += -0.28 * w;
+      t.headX += -0.08 * w;
+      break;
+    default:
+      t.armR += -1.4 * w;
+      t.elbowR += -0.7 * w;
+      t.torsoY += -0.2 * w;
+  }
+}
+
 export class CharacterAnimator {
   constructor(rig) {
     this.rig = rig;
@@ -54,6 +160,15 @@ export class CharacterAnimator {
     this.channelOn = false; // extraction sustained-pose flag
     this.gesture = null; // one-shot arm gesture name
     this.gestureT = 0; // seconds left on the one-shot
+
+    // combat states (also additive): a sustained guard stance and one-shot
+    // strike envelopes — see GUARD_POSES / applyStrike above
+    this.guard = 0; // smoothed 0..1
+    this.guardOn = false;
+    this.guardPose = 'square';
+    this.strikeT = 0; // seconds left on the current strike
+    this.strikeDur = 0.4;
+    this.strikeKind = null;
 
     // smoothed channels
     this.c = {
@@ -99,6 +214,11 @@ export class CharacterAnimator {
     this.crouch = smooth(this.crouch, info.crouch ? 1 : 0, 8, dt);
     this.channel = smooth(this.channel, this.channelOn ? 1 : 0, 6, dt);
     if (this.gestureT > 0) this.gestureT = Math.max(0, this.gestureT - dt);
+    this.guard = smooth(this.guard, this.guardOn ? 1 : 0, 14, dt);
+    if (this.strikeT > 0) {
+      this.strikeT = Math.max(0, this.strikeT - dt);
+      if (this.strikeT === 0) this.strikeKind = null;
+    }
 
     // ---- turn-on-the-spot detection ------------------------------------
     // Read off the rig's own yaw: when the body spins while the feet stay
@@ -222,8 +342,46 @@ export class CharacterAnimator {
       t.torsoX += -0.06 * ch;
     }
 
+    // guard stance: the style's own guard pose, held while blocking. Applied
+    // before strikes so an active swing can always override the stance.
+    const gd = this.guard;
+    if (gd > 0.001) {
+      const g = GUARD_POSES[this.guardPose] ?? GUARD_POSES.square;
+      const live = 1 - ch; // never fight the extraction pose
+      t.armR += (g.armR ?? 0) * gd * live;
+      t.armL += (g.armL ?? 0) * gd * live;
+      t.elbowR += (g.elbowR ?? 0) * gd * live;
+      t.elbowL += (g.elbowL ?? 0) * gd * live;
+      if (g.armOutR !== undefined) t.armOutR += g.armOutR * gd * live;
+      if (g.armOutL !== undefined) t.armOutL += g.armOutL * gd * live;
+      t.torsoX += (g.torsoX ?? 0) * gd * live;
+      t.torsoY += (g.torsoY ?? 0) * gd * live;
+      t.headX += (g.headX ?? 0) * gd * live;
+      if (g.hipsY !== undefined) t.hipsY += g.hipsY * gd * live;
+      if (g.hipsRotY !== undefined) t.hipsRotY += g.hipsRotY * gd * live;
+      // a guarded stance stills the idle micro-beats (handled below) and
+      // damps the arm swing so the guard reads as held, not flailing
+      if (this.blend > 0.05) {
+        t.armR *= 1 - 0.55 * gd * live;
+        t.armL *= 1 - 0.55 * gd * live;
+      }
+    }
+
+    // one-shot strike envelope (jab / cross / hook / heavy / special / dodge /
+    // stagger …) — a bell curve over the swing so wind-up, snap and recovery
+    // all happen inside one call
+    if (this.strikeT > 0 && this.strikeKind && ch < 0.3) {
+      const p = 1 - this.strikeT / this.strikeDur; // 0..1 through the swing
+      let w;
+      if (p < 0.35) w = -(p / 0.35) * 0.45; // wind-up: pull back
+      else if (p < 0.62) w = -0.45 + 1.45 * ((p - 0.35) / 0.27); // snap: 0 → 1
+      else w = 1 - (p - 0.62) / 0.38; // recovery: 1 → 0
+      applyStrike(t, this.strikeKind, w * (1 - ch));
+    }
+
     // one-shot gestures (talking / inspecting / starting an action)
-    if (this.gestureT > 0 && GESTURES[this.gesture]) {
+    // suppressed while fighting: a stance or a swing owns the arms first
+    if (this.gestureT > 0 && GESTURES[this.gesture] && this.strikeT === 0 && gd < 0.5) {
       const g = GESTURES[this.gesture];
       const gk = Math.sin(clamp(this.gestureT / g.dur, 0, 1) * Math.PI);
       const live = 1 - ch; // never fight the extraction pose
@@ -240,7 +398,7 @@ export class CharacterAnimator {
 
     // idle micro-life: a rotating set of beats so standing still stays alive
     const idleK = 1 - this.blend;
-    if (idleK > 0.01 && ch < 0.2 && airT < 0.05) {
+    if (idleK > 0.01 && ch < 0.2 && airT < 0.05 && gd < 0.3) {
       const shift = Math.sin(this.idleTime * 0.13);
       t.torsoY += shift * 0.05 * idleK;
       t.hipsY += -Math.abs(shift) * 0.012 * idleK;
@@ -359,6 +517,33 @@ export class CharacterAnimator {
     this.channelOn = !!on;
   }
 
+  /**
+   * Hold (or release) the current style's guard stance.
+   * @param {boolean} on
+   * @param {string} pose style guardPose name (see GUARD_POSES)
+   */
+  setGuard(on, pose = null) {
+    this.guardOn = !!on;
+    if (pose) this.guardPose = GUARD_POSES[pose] ? pose : 'square';
+  }
+
+  /**
+   * Fire a one-shot combat strike. The envelope runs wind-up → snap →
+   * recovery inside `dur` seconds and layers over locomotion.
+   * @param {string} kind jab|cross|hook|heavy|special|kick|dodge|stagger|block
+   * @param {number} dur seconds
+   */
+  strike(kind = 'jab', dur = 0.42) {
+    this.strikeKind = kind;
+    this.strikeDur = Math.max(0.12, dur);
+    this.strikeT = this.strikeDur;
+  }
+
+  /** True while a strike envelope is still running (attacks time off it). */
+  get striking() {
+    return this.strikeT > 0;
+  }
+
   reset() {
     this.phase = 0;
     this.shuffle = 0;
@@ -373,6 +558,12 @@ export class CharacterAnimator {
     this.channelOn = false;
     this.gesture = null;
     this.gestureT = 0;
+    this.guard = 0;
+    this.guardOn = false;
+    this.guardPose = 'square';
+    this.strikeT = 0;
+    this.strikeDur = 0.4;
+    this.strikeKind = null;
     for (const k of Object.keys(this.c)) {
       this.c[k] = k.startsWith('armOut') || k.startsWith('coat') ? 0.06 : 0;
     }

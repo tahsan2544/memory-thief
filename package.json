@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview --port 4173",
     "smoke": "node scripts/smoke.mjs",
+    "probe:combat": "node scripts/probe-combat.mjs",
     "check:data": "node scripts/check-data.mjs"
   },
   "dependencies": {

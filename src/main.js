@@ -117,6 +117,25 @@ import {
 import { a11yPrefs, initA11y, setA11y } from './ui/accessibility.js';
 import { createTouchControls } from './ui/touchControls.js';
 
+/* ---- V2 combat (docs/GAME-DESIGN.md §2–§10) --------------------------- */
+import { CombatSystem } from './combat/combatSystem.js';
+import { PlayerCombatState } from './combat/playerState.js';
+import { STYLE_BY_ID } from './combat/styles.js';
+import { WEAPON_BY_ID } from './weapons/weapons.js';
+import { Spawner } from './enemies/spawner.js';
+import { StealChannel, STEAL_REACH } from './powers/steal.js';
+import { rankTitle } from './enemies/ranking.js';
+import {
+  clearCombatFx,
+  initCombatHud,
+  setCombatProjector,
+  setCombatHudVisible,
+  spawnCombatEvent,
+  spawnDamageNumber,
+  updateCombatHud,
+} from './ui/combatHud.js';
+import { flashHotbarSlot, initHotbar, setHotbarVisible, updateHotbar } from './ui/hotbar.js';
+
 /* --------------------------------------------------------------------- *
  * Bootstrap
  * --------------------------------------------------------------------- */
@@ -343,6 +362,108 @@ initMemoryUI({
 });
 
 initStealthHud();
+
+/* --------------------------------------------------------------------- *
+ * V2 — combat core (docs/GAME-DESIGN.md §2–§9)
+ *
+ * One state (vitals/loadout/ledger), one FSM (attacks/defence), one
+ * spawner (34 seated groups, streaming, projectiles) and one channel
+ * (the Requital). Presentation flows out through callbacks; nothing in
+ * here touches the DOM directly except the HUD modules.
+ * --------------------------------------------------------------------- */
+
+initCombatHud();
+setCombatProjector(app.camera, app.renderer.domElement);
+initHotbar();
+
+const combatState = new PlayerCombatState();
+let deathT = 0; // seconds until the get-up after a defeat
+
+const combat = new CombatSystem({
+  state: combatState,
+  callbacks: {
+    onSwing: () => playCue('swing'),
+    onWhiff: () => playCue('swing'),
+    onHit: (f, dmg, info) => {
+      spawnDamageNumber({ x: f.x, y: 1.7, z: f.z }, dmg, info?.counter ? 'crit' : 'hit');
+      playCue('hit');
+    },
+    onParry: () => {
+      spawnCombatEvent('PARRY', 'good');
+      playCue('parry');
+    },
+    onBlocked: () => playCue('block'),
+    onDodged: () => playCue('dodge'),
+    onEvent: (text) => spawnCombatEvent(text, /broken|not enough/i.test(text) ? 'bad' : 'info'),
+    onPlayerDamaged: (amount) => {
+      const p = player?.position;
+      if (p) spawnDamageNumber({ x: p.x, y: (player.renderY ?? p.y) + 1.9, z: p.z }, `-${amount}`, 'taken');
+      playCue('hurt');
+    },
+    onDefeat: () => {
+      spawnCombatEvent('YOU FALL', 'bad');
+      toast('The Requital tears free — get back up', 3200);
+      playCue('extract-fail');
+      deathT = 1.6;
+    },
+    onLock: (f) => {
+      if (f) playCue('ui');
+    },
+  },
+});
+
+const spawner = new Spawner({
+  scene: app.scene,
+  getColliders: () => world?.colliders ?? null,
+  callbacks: {
+    hitPlayer: (dmg, info) => combat.receiveHit(dmg, info),
+    onDamage: (f, amount) => {
+      spawnDamageNumber({ x: f.x, y: 1.7, z: f.z }, amount, 'hit');
+      playCue('hit');
+    },
+    onSubdued: (f) => {
+      combatState.kills++;
+      spawnCombatEvent(`${f.group.name} DOWN`, 'good');
+      playCue('ko');
+    },
+    onAlert: (f) => {
+      // first blood of an engagement: reset the per-fight power flags
+      const engaged = spawner.fighters.some(
+        (o) => o !== f && o.alive && (o.state === 'chase' || o.state === 'attack'),
+      );
+      if (!engaged) {
+        combat.startFight();
+        spawnCombatEvent('SPOTTED', 'bad');
+        playCue('ui');
+      }
+    },
+    onBlink: () => spawnCombatEvent('BLINK', 'info'),
+  },
+});
+
+const steal = new StealChannel({
+  state: combatState,
+  callbacks: {
+    onBegin: () => playCue('extract-charge'),
+    onCancel: () => playCue('extract-fail'),
+    onComplete: ({ fighter, group, grant }) => {
+      spawner.defeatGroup(group.id);
+      playCue('steal');
+      spawnCombatEvent('REQUITAL', 'good');
+      spawnDamageNumber({ x: fighter.x, y: 1.8, z: fighter.z }, 'MEMORY TAKEN', 'steal');
+      const styleName = grant.style ? STYLE_BY_ID[grant.style]?.name : null;
+      const bits = [
+        styleName ? `${styleName} learned` : null,
+        grant.weapon ? 'weapon taken' : null,
+        grant.powers.length ? `${grant.powers.length} power${grant.powers.length > 1 ? 's' : ''}` : null,
+        grant.firstTime ? null : 'knowledge deepened',
+      ].filter(Boolean);
+      toast(`${group.name} robbed — ${bits.join(' · ') || 'memory taken'}`, 4600);
+      if (grant.weapon) flashHotbarSlot(Math.max(0, combatState.hotbar.indexOf(grant.weapon)));
+      applyCombatHudVisibility(); // a first steal can fill an empty slot
+    },
+  },
+});
 
 /* --------------------------------------------------------------------- *
  * Phase 6 — interface screens + progression wiring
@@ -581,6 +702,13 @@ function toggleAbility() {
   return true;
 }
 
+/** Combat surfaces follow play mode + the H HUD toggle (Phase 2/3/9). */
+function applyCombatHudVisibility() {
+  const on = mode === 'play' && hudVisible;
+  setCombatHudVisible(on);
+  setHotbarVisible(on && combatState.hotbar.length > 0);
+}
+
 function applyModeUi() {
   const play = mode === 'play';
   if (hudMode) hudMode.textContent = play ? 'RIVEN VALE' : 'INSPECTION CAMERA';
@@ -588,6 +716,7 @@ function applyModeUi() {
   controlsInspect?.classList.toggle('hidden', play);
   crosshairEl?.classList.toggle('hidden', !play);
   setStealthHudVisible(play);
+  applyCombatHudVisibility();
 }
 
 function setMode(next) {
@@ -776,6 +905,13 @@ async function generate({ quiet = false } = {}) {
     player.active = mode === 'play';
     lastSpawn = sp;
 
+    // ---- V2: seat the 34 encounter groups on the fresh layout ---------
+    spawner.rebuild(layout);
+    combat.reset(); // the old fighters are gone — lock-on and combos go too
+    deathT = 0;
+    if (!combatState.alive) combat.revive(); // never enter a new world dead
+    clearCombatFx();
+
     // ---- re-apply memory progress to the fresh world --------------------
     for (const f of memories.list()) {
       if (memories.isReconstructed(f.id)) applyConsequences(f, { silent: true });
@@ -949,6 +1085,7 @@ function handlePressed(codes) {
     } else if (code === 'KeyH' && !panel.isOpen()) {
       hudVisible = !isHudVisible();
       setHudVisible(hudVisible);
+      applyCombatHudVisibility(); // the fight bars ride the same toggle
     } else if (code === 'KeyN' && !panel.isOpen()) {
       settings.seed = `eidolon-${Math.floor(Math.random() * 9000 + 1000)}`;
       panel.syncFromSettings();
@@ -1078,7 +1215,19 @@ function syncContactShadows() {
   contact.update(e);
 }
 
-function updateInteractions(pressed) {
+/** Show/hide the Requital ring and paint its conic progress (--p 0..1). */
+function setStealUi(on, progress = 0) {
+  const el = document.getElementById('steal');
+  if (!el) return;
+  if (el.classList.contains('hidden') === !!on) el.classList.toggle('hidden', !on);
+  if (on) {
+    document
+      .getElementById('steal-fill')
+      ?.style.setProperty('--p', String(Math.max(0, Math.min(1, progress))));
+  }
+}
+
+function updateInteractions(pressed, dt = 0) {
   const sites = world?.memorySites;
   if (
     !world ||
@@ -1088,6 +1237,8 @@ function updateInteractions(pressed) {
     recon.isActive() ||
     extracting
   ) {
+    steal.tick(dt, null, false, false); // an interruption cancels the channel
+    setStealUi(false);
     nearSourceRec = null;
     nearInteractable = null;
     hidePrompt();
@@ -1095,6 +1246,28 @@ function updateInteractions(pressed) {
     return;
   }
   const p = player.position;
+
+  // ---- V2: the Requital owns E while a subdued gang is under your glove
+  // (hold-E channel; releasing *or walking away* cancels, a completed
+  // channel grants the style and clears the territory)
+  const stealTarget = steal.findTarget(p.x, p.z, spawner);
+  const chan = steal.active ? steal.target : stealTarget;
+  const inReach = !!chan && Math.hypot(chan.x - p.x, chan.z - p.z) <= STEAL_REACH + 0.8;
+  if (steal.active || stealTarget) {
+    steal.tick(dt, inReach ? chan : null, input.isDown('KeyE'), true);
+    const t = steal.active ? steal.target : inReach ? stealTarget : null;
+    setStealUi(!!t, steal.progress);
+    if (t) {
+      showPrompt(
+        steal.active
+          ? `REQUIRING… ${Math.round(steal.progress * 100)}%`
+          : steal.promptFor(t),
+      );
+      focus.set({ x: t.x, y: (t.y ?? 0) + 1.2, z: t.z });
+    } else hidePrompt();
+    return; // the channel consumed E — no extraction, no signage this frame
+  }
+  setStealUi(false);
 
   // memory sources (people and marked objects) take the prompt first — but a
   // fragment already in the journal falls back to the object's own read-out,
@@ -1267,6 +1440,7 @@ function doSaveGame() {
     memories: memories.exportState(),
     discovery: discovery.snapshot(),
     progression: progression.snapshot(),
+    combat: combatState.snapshot(), // V2: vitals, loadout, powers, the 34-rung ledger
   });
   const r = writeSave(doc);
   toast(r.ok ? 'Game saved — checkpoint written' : `Save failed — ${r.error}`, 2800);
@@ -1298,6 +1472,8 @@ async function doLoadGame() {
   memories.applyState(doc.memories);
   discovery.applySnapshot(doc.discovery);
   progression.applySnapshot(doc.progression);
+  if (doc.combat) combatState.applySnapshot(doc.combat);
+  else combatState.reset();
   applyProgressionEffects();
   if (doc.seed) settings.seed = doc.seed;
   // older checkpoints carry no shape — keep whatever the page already had
@@ -1321,6 +1497,8 @@ async function doNewGame() {
   memories.reset();
   discovery.reset();
   progression.reset();
+  combatState.reset(); // V2: a new game starts with bare fists and no ledger
+  deathT = 0;
   applyProgressionEffects();
   lastDistrict = ''; // the spawn district gets its "charted" beat again
   await generate({ quiet: true });
@@ -1346,6 +1524,7 @@ app.onUpdate((dt, _app, rawDtIn) => {
   // day/night clock); capped so one wild stall cannot yank hours forward
   const rawDt = Math.min(rawDtIn ?? dt, 2);
   const pressed = input.consumePressed();
+  const mousePressed = input.consumeMousePressed(); // LMB/RMB edges for combat
   elapsed += dt;
 
   // ---- overlay key routing ---------------------------------------------
@@ -1432,10 +1611,81 @@ app.onUpdate((dt, _app, rawDtIn) => {
   updateMiniMap();
 
   if (mode === 'play' && player) {
-    player.update(dt, pressed, { frozen: overlayOpen, rawDt });
+    player.update(dt, pressed, { frozen: overlayOpen || deathT > 0, rawDt });
     player.cameraTarget(pivotTarget);
     camRig.update(dt, pivotTarget, player.speed);
     player.setChannel(!!extracting); // Phase 8: hold the glove-up pose while channeling
+
+    // ---- V2 combat (Phase 2/3): FSM, streaming fighters, the Requital --
+    const inputOk =
+      !overlayOpen && !extracting && !recon.isActive() && combatState.alive && deathT <= 0;
+
+    if (deathT > 0) {
+      deathT -= dt;
+      if (deathT <= 0) {
+        combat.revive(); // full vitals, the life gate reopens
+        respawnPlayer();
+      }
+    }
+
+    // digits 1–9 swap the hotbar weapon (inspect-mode digits stay views)
+    if (!overlayOpen) {
+      for (let i = 1; i <= 9; i++) {
+        if (pressed.includes(`Digit${i}`) && combatState.equipSlot(i - 1)) {
+          flashHotbarSlot(i - 1);
+          playCue('ui');
+        }
+      }
+    }
+
+    combat.bindPlayer(player);
+    combat.update(dt, {
+      pressed,
+      mousePressed,
+      mouseHeld: (b) => input.isMouseDown(b),
+      input,
+      cameraRig: camRig,
+      player,
+      fighters: spawner.fighters,
+      inputOk,
+    });
+
+    {
+      const pp = player.position;
+      spawner.update(
+        dt,
+        elapsed,
+        {
+          x: pp.x,
+          y: player.renderY ?? pp.y,
+          z: pp.z,
+          attacking: combat.action === 'attack',
+        },
+        { enabled: inputOk, defeatedSet: combatState.defeated },
+      );
+    }
+
+    // combat HUD — change-driven, so this is a few comparisons per frame
+    const tgt = combat.lockOn;
+    updateCombatHud({
+      hp: combatState.hp,
+      maxHp: combatState.maxHp,
+      stamina: combatState.stamina,
+      posture: combatState.posture,
+      style: STYLE_BY_ID[combatState.styleId]?.name ?? '',
+      weapon: WEAPON_BY_ID[combatState.weaponId]?.name ?? '',
+      rank: combatState.defeated.size,
+      rankTitle: rankTitle(combatState.defeated.size),
+      target: tgt
+        ? {
+            name: `${tgt.group.name} · ${tgt.group.members?.leader ?? `Rank ${tgt.group.rank}`}`,
+            sub: `${tgt.state.toUpperCase()} · R${tgt.group.rank}`,
+            hp: tgt.hp,
+            maxHp: tgt.maxHp,
+          }
+        : null,
+    });
+    updateHotbar({ hotbar: combatState.hotbar, weaponId: combatState.weaponId });
 
     // ---- memory world state (runs even under overlays: ghosts keep playing)
     world?.memorySites?.update(dt, elapsed, player.position);
@@ -1481,11 +1731,12 @@ app.onUpdate((dt, _app, rawDtIn) => {
       );
     }
 
-    if (!overlayOpen) updateInteractions(pressed);
+    if (!overlayOpen) updateInteractions(pressed, dt);
     else {
       nearSourceRec = null;
       nearInteractable = null;
       hidePrompt();
+      setStealUi(false); // an overlay borrowed the screen — tuck the ring away
     }
   } else if (!overlayOpen) {
     flyCamera.update(dt); // an open panel owns the keys — the camera holds still
@@ -2067,5 +2318,46 @@ window.__MT_SAVE__ = async (op = 'status', text = null) => {
 };
 // accessibility preferences (read or patch) — persisted under mt.a11y.v1
 window.__MT_A11Y__ = (patch) => (patch ? setA11y(patch) : a11yPrefs());
+
+/* ---- V2 combat (Phase 2/5/9) — seams for scripts/probe-combat.mjs ----- */
+// full combat read-out: FSM + vitals + the Requital channel
+window.__MT_COMBAT__ = () => ({
+  ...combat.snapshot(),
+  state: combatState.snapshot(),
+  steal: steal.snapshot(),
+  death: Math.round(deathT * 100) / 100,
+});
+// every live fighter + stream budget (spawner.snapshot)
+window.__MT_FIGHTERS__ = () => spawner.snapshot();
+// all 34 territory anchors: position, active/defeated flags, member count
+window.__MT_GROUPS__ = () => spawner.groupStatus();
+// the Requital channel as the HUD shows it (progress, prompt, ring)
+window.__MT_STEAL__ = () => ({
+  ...steal.snapshot(),
+  promptShown: !document.getElementById('prompt')?.classList.contains('hidden'),
+  prompt: document.getElementById('prompt-label')?.textContent ?? '',
+  uiShown: !document.getElementById('steal')?.classList.contains('hidden'),
+});
+// put fighters down through the REAL damage path (subdue → groupReady → steal)
+window.__MT_SUBDUE__ = (id) => {
+  const list = id
+    ? spawner.fighters.filter((f) => f.group.id === id || f.id === id)
+    : spawner.fighters;
+  for (const f of list) {
+    f.takeDamage(999999, { kind: 'heavy', source: 'player', dirX: 0, dirZ: 1, posture: 0 });
+  }
+  return list.length;
+};
+// raw mouse edges/holds — the FSM reads these next frame, no shortcuts
+window.__MT_MOUSE__ = (button, down) => input.setMouseButton(button, down);
+window.__MT_PRESS_MOUSE__ = (button) => input.injectMousePress(button);
+// player vitals through the real receiveHit path (dodge/block/parry apply)
+window.__MT_HURT__ = (amount, kind = 'melee') =>
+  combat.receiveHit(amount, {
+    kind,
+    posture: Math.round(amount * 0.5),
+    srcX: player?.position.x ?? 0,
+    srcZ: (player?.position.z ?? 0) - 2,
+  });
 
 export { app, flyCamera as camera, generate, settings, DEFAULTS, setQuality, PALETTE };

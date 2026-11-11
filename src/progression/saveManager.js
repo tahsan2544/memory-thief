@@ -2,11 +2,12 @@
  * SaveManager — the Phase 6 checkpoint document.
  *
  * One key (`mt.save.v1`) holds a *point-in-time snapshot* of every progress
- * system: memories, discovery, upgrades, player position and the
- * world seed. The live systems keep persisting to their own keys as before
- * (the memory mechanic's behaviour is untouched); Save writes the checkpoint,
- * Load rolls everything back to it, New Game erases it — always with the
- * player's deliberate confirmation handled by the pause menu.
+ * system: memories, discovery, upgrades, player position, the world seed
+ * and (v2) the combat state — vitals, loadout, stolen powers and the
+ * defeated-group ledger. The live systems keep persisting to their own keys
+ * as before (the memory mechanic's behaviour is untouched); Save writes the
+ * checkpoint, Load rolls everything back to it, New Game erases it — always
+ * with the player's deliberate confirmation handled by the pause menu.
  *
  * Safety rules:
  *   - missing file   → status 'missing' (start fresh, no error)
@@ -23,7 +24,7 @@ import { FRAGMENT_BY_ID } from '../memories/fragments.js';
 import { UPGRADE_BY_ID } from './upgrades.js';
 
 export const SAVE_KEY = 'mt.save.v1';
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2; // v2 adds the `combat` block (vitals/loadout/ledger)
 
 /** Every localStorage key a "new game" clears (accessibility prefs survive).
  * 'mt.story.v1' is a legacy key from the removed story layer — still cleared
@@ -80,6 +81,26 @@ export function validateDoc(raw) {
       ? null
       : { x: px, z: pz, yaw: num(pl.yaw, 0), district: typeof pl.district === 'string' ? pl.district : null };
 
+  // ---- combat (v2): vitals, loadout, powers, the 34-rung ledger ---------
+  // Ids are NOT validated here — PlayerCombatState.applySnapshot filters
+  // them against the data tables (one owner for one rule).
+  const cbt = raw.combat && typeof raw.combat === 'object' ? raw.combat : {};
+  const kn = cbt.knowledge && typeof cbt.knowledge === 'object' ? cbt.knowledge : {};
+  const combat = {
+    hp: num(cbt.hp, 100),
+    stamina: num(cbt.stamina, 100),
+    posture: num(cbt.posture, 0),
+    styleId: typeof cbt.styleId === 'string' ? cbt.styleId : null,
+    weaponId: typeof cbt.weaponId === 'string' ? cbt.weaponId : null,
+    hotbar: list(cbt.hotbar),
+    powers: list(cbt.powers),
+    knowledge: { hp: num(kn.hp, 0), atk: num(kn.atk, 0), def: num(kn.def, 0) },
+    defeated: list(cbt.defeated),
+    stolenStyles: list(cbt.stolenStyles),
+    kills: num(cbt.kills, 0),
+    steals: num(cbt.steals, 0),
+  };
+
   const doc = {
     v: SAVE_VERSION,
     savedAt: Number.isFinite(raw.savedAt) ? raw.savedAt : null,
@@ -97,6 +118,7 @@ export function validateDoc(raw) {
     },
     discovery: { districts: list(disc.districts), landmarks: list(disc.landmarks) },
     progression: { spent },
+    combat,
   };
   return { ok: true, doc, issues };
 }
@@ -128,7 +150,17 @@ export function readSave() {
 }
 
 /** Build a validated checkpoint document from live system snapshots. */
-export function buildSnapshot({ seed, grid = null, density = null, player, memories, discovery, progression, savedAt = Date.now() }) {
+export function buildSnapshot({
+  seed,
+  grid = null,
+  density = null,
+  player,
+  memories,
+  discovery,
+  progression,
+  combat = null, // v2: vitals/loadout/ledger — dropping it wrote an empty ledger
+  savedAt = Date.now(),
+}) {
   const v = validateDoc({
     v: SAVE_VERSION,
     savedAt,
@@ -139,6 +171,7 @@ export function buildSnapshot({ seed, grid = null, density = null, player, memor
     memories,
     discovery,
     progression,
+    combat,
   });
   if (!v.ok) return null; // caller reports "could not save" — never writes junk
   return v.doc;

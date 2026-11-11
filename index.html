@@ -34,12 +34,15 @@
           <div class="welcome-file">
             <div class="welcome-file-head">ON FOOT</div>
             <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk · <kbd>Shift</kbd> sprint · <kbd>Space</kbd> jump</div>
+            <div><kbd>LMB</kbd> strike · <kbd>F</kbd> heavy · <kbd>G</kbd> style special</div>
+            <div><kbd>C</kbd> dodge · <kbd>Q</kbd> lock-on · <kbd>RMB</kbd> guard / parry</div>
             <div><kbd>E</kbd> interact · <kbd>M</kbd> city map · <kbd>Tab</kbd> mini-map</div>
-            <div><kbd>J</kbd> journal · <kbd>I</kbd> equipment</div>
+            <div><kbd>J</kbd> journal · <kbd>I</kbd> equipment · <kbd>1</kbd>–<kbd>9</kbd> weapons</div>
           </div>
           <div class="welcome-file">
             <div class="welcome-file-head">THE GLOVE</div>
             <div><kbd>E</kbd> at a reading — extract the memory</div>
+            <div>Hold <kbd>E</kbd> on the fallen — steal their style</div>
             <div><kbd>Enter</kbd> — reconstruct what the city buried</div>
             <div><kbd>V</kbd> — Resonance Sight, once it awakens</div>
           </div>
@@ -62,9 +65,10 @@
         <div class="hud-mode" id="hud-mode">RIVEN VALE</div>
         <div class="hud-controls" id="controls-play">
           <div><b>Click</b> mouse · <b>W A S D</b> move · <b>Shift</b> sprint · <b>Space</b> jump · <b>E</b> interact</div>
-          <div><b>Mouse</b> orbit/zoom · <b>R</b> respawn · <b>N</b> new seed · <b>F5</b> inspection camera</div>
-          <div><b>J</b> journal · <b>M</b> city map · <b>Tab</b> mini-map · <b>I</b> gear · <b>V</b> resonance sight</div>
-          <div><b>P</b>/<b>Esc</b> pause · <b>H</b> hide HUD · <b>Chip, top centre</b> stealth + why</div>
+          <div><b>LMB</b> strike · <b>F</b> heavy · <b>G</b> special · <b>C</b> dodge · <b>Q</b> lock-on · <b>RMB</b> guard</div>
+          <div><b>1–9</b> weapons · hold <b>E</b> on the fallen to steal their style · <b>R</b> respawn</div>
+          <div><b>J</b> journal · <b>M</b> map · <b>Tab</b> mini-map · <b>I</b> gear · <b>V</b> sight · <b>N</b> new seed</div>
+          <div><b>P</b>/<b>Esc</b> pause · <b>H</b> hide HUD · <b>F5</b> inspection camera</div>
         </div>
         <div class="hud-controls hidden" id="controls-inspect">
           <div><b>Click</b> capture mouse · <b>W A S D</b> fly · <b>Q / E</b> down / up</div>
@@ -248,6 +252,50 @@
       </div>
       <div class="stealth-bar"><div class="stealth-fill" id="stealth-fill"></div></div>
       <div class="stealth-reason" id="stealth-reason">No one is watching</div>
+    </div>
+
+    <!-- ========================= COMBAT HUD (V2) ========================= -->
+    <div id="combat" class="combat hidden">
+      <div class="combat-vitals">
+        <div class="vital-row">
+          <span class="vital-tag">HP</span>
+          <div class="vital-track"><div id="combat-hp" class="vital-fill vital-hp"></div></div>
+          <span id="combat-hp-num" class="vital-num">100</span>
+        </div>
+        <div class="vital-row">
+          <span class="vital-tag">ST</span>
+          <div class="vital-track"><div id="combat-st" class="vital-fill vital-st"></div></div>
+        </div>
+        <div class="vital-row">
+          <span class="vital-tag">PS</span>
+          <div class="vital-track"><div id="combat-ps" class="vital-fill vital-ps"></div></div>
+        </div>
+        <div class="combat-loadout">
+          <span id="combat-style">Wrapped Fists</span>
+          <span id="combat-weapon" class="combat-weapon">Wrapped fists</span>
+        </div>
+      </div>
+
+      <div id="combat-target" class="combat-target hidden">
+        <div id="combat-target-name" class="combat-target-name">—</div>
+        <div class="combat-target-track"><div id="combat-target-fill" class="combat-target-fill"></div></div>
+        <div id="combat-target-sub" class="combat-target-sub"></div>
+      </div>
+
+      <div id="combat-rank" class="combat-rank">RANK 0 · NOBODY</div>
+
+      <div id="combat-floats" class="combat-floats" aria-hidden="true"></div>
+      <div id="combat-events" class="combat-events" aria-live="polite"></div>
+    </div>
+
+    <!-- ============================= HOTBAR ============================= -->
+    <div id="hotbar" class="hotbar hidden" aria-label="Weapon hotbar"></div>
+
+    <!-- ======================== REQUIITAL CHANNEL ======================= -->
+    <div id="steal" class="steal hidden">
+      <div class="steal-ring"><div class="steal-fill" id="steal-fill"></div></div>
+      <div class="steal-label" id="steal-label">REQUIRING…</div>
+      <div class="steal-hint">HOLD <kbd>E</kbd> — STAND STILL</div>
     </div>
 
     <div id="prompt" class="prompt hidden">

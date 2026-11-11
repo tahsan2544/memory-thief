@@ -256,6 +256,38 @@ export function playCue(name) {
       noiseBurst({ dur: 0.13, gain: 0.06, freq: 420, q: 0.8 });
       tone({ type: 'sine', freq: 84, end: 58, dur: 0.14, gain: 0.07 });
       return true;
+    /* ---- V2 combat cues (docs/GAME-DESIGN.md §10) --------------------- */
+    case 'swing': // a glove cutting the air
+      noiseBurst({ dur: 0.1, gain: 0.03, freq: 1600, q: 1.2 });
+      return true;
+    case 'hit': // a strike landing
+      noiseBurst({ dur: 0.09, gain: 0.07, freq: 900, q: 0.7 });
+      tone({ type: 'triangle', freq: 150, end: 70, dur: 0.1, gain: 0.08 });
+      return true;
+    case 'hurt': // the player takes one
+      tone({ type: 'square', freq: 120, end: 70, dur: 0.16, gain: 0.07 });
+      noiseBurst({ dur: 0.12, gain: 0.05, freq: 500, q: 0.8 });
+      return true;
+    case 'parry': // timed guard turns the blow
+      tone({ type: 'triangle', freq: 1760, dur: 0.1, gain: 0.07 });
+      tone({ type: 'sine', freq: 2640, t: 0.03, dur: 0.2, gain: 0.05 });
+      return true;
+    case 'block': // guard eats the hit
+      noiseBurst({ dur: 0.12, gain: 0.05, freq: 380, q: 1.6 });
+      tone({ type: 'sine', freq: 110, dur: 0.12, gain: 0.06 });
+      return true;
+    case 'dodge': // i-frame roll
+      noiseBurst({ dur: 0.16, gain: 0.035, freq: 2200, q: 0.6 });
+      return true;
+    case 'ko': // an enemy goes down
+      tone({ type: 'triangle', freq: 320, end: 90, dur: 0.3, gain: 0.08 });
+      noiseBurst({ dur: 0.2, gain: 0.05, freq: 300, q: 0.7 });
+      return true;
+    case 'steal': // the Requital takes the memory
+      tone({ type: 'sawtooth', freq: 220, end: 880, dur: 0.7, gain: 0.06 });
+      tone({ type: 'sine', freq: 1320, t: 0.35, dur: 0.5, gain: 0.05 });
+      noiseBurst({ dur: 0.5, gain: 0.03, freq: 3000, q: 2 });
+      return true;
     default:
       return false;
   }
