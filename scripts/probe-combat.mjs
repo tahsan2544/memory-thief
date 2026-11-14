@@ -445,6 +445,32 @@ async function main() {
     await ev(() => window.__MT_KEY__('KeyE', false));
     check('the channel completes — the memory is stolen', steals >= 1, `steals=${steals}`);
 
+    /* ---- Phase 12: the five-facet story card rides the steal ---------- */
+    const story = await ev(() => window.__MT_STORY__());
+    check(
+      'the Requital opens the memory story card',
+      story.open === true && story.id === GROUP_ID,
+      JSON.stringify({ open: story.open, id: story.id, type: story.type }),
+    );
+    check(
+      'the card carries the five-facet choreography',
+      story.facets.length === 5 && story.facets.every((f) => typeof f.text === 'string' && f.text.length > 0),
+      `${story.facets.length} facets`,
+    );
+    const leadFacet = story.facets.find((f) => f.k === 'next');
+    check(
+      'the next lead surfaces the raw memoryLead thread',
+      !!leadFacet && /Brickyards gym/.test(leadFacet.text),
+      leadFacet?.text ?? 'missing next facet',
+    );
+    const factFacet = story.facets.find((f) => f.k === 'fact');
+    check(
+      'the act fact stays locked until the act falls',
+      !!factFacet && /^Locked/.test(factFacet.text),
+      factFacet?.text ?? 'missing fact facet',
+    );
+    check('rank 1 beats as an AMBUSH', story.type === 'ambush', String(story.type));
+
     const ringAway = await until(
       () => ev(() => document.getElementById('steal')?.classList.contains('hidden') ?? true),
       (v) => v === true,
@@ -554,6 +580,150 @@ async function main() {
         knowledge: afterLoad.knowledge,
       }),
     );
+
+    /* ---------------- 13. THE OVERLORD (Phase 13) ---------------------- */
+    console.log('[probe] boss checks…');
+    const bossAnchor = (await ev(() => window.__MT_GROUPS__())).find((g) => g.rank === 34);
+    check(
+      'the Overlord’s arena is seated on the ladder',
+      !!bossAnchor && bossAnchor.district === 'underarchive',
+      JSON.stringify(bossAnchor),
+    );
+    await ev((p) => window.__MT_TP__(p.x, p.z, 0), bossAnchor);
+    const boss0 = await until(() => ev(() => window.__MT_BOSS__()), (b) => b?.exists === true, 30000, 500);
+    check(
+      'the Overlord spawns as his own fighter class',
+      boss0?.exists === true && boss0.phase === 1,
+      JSON.stringify(boss0),
+    );
+    check(
+      'boss-tier health fits three phases (≥15k hp, deep posture)',
+      (boss0?.maxHp ?? 0) >= 15000 && (boss0?.maxPosture ?? 0) >= 150,
+      `hp=${boss0?.maxHp} posture=${boss0?.maxPosture}`,
+    );
+    const barUp = await ev(
+      () => document.getElementById('combat-boss')?.classList.contains('hidden') === false,
+    );
+    check('the boss bar rises with him', barUp === true, String(barUp));
+    const barPhase = await ev(() => document.getElementById('combat-boss-phase')?.textContent ?? '');
+    check('the bar reads PHASE 1 · THE WALL', /PHASE 1 · THE WALL/.test(barPhase), barPhase);
+
+    // forced phase shifts — through the real hp-threshold + event path
+    await ev(() => window.__MT_BOSS__({ hpRatio: 0.5 }));
+    const boss2 = await until(() => ev(() => window.__MT_BOSS__()), (b) => b?.phase === 2, 8000, 300);
+    check(
+      '50% hp opens Phase 2 — THE COLLECTOR',
+      boss2?.phase === 2 && boss2?.phaseTitle === 'THE COLLECTOR',
+      JSON.stringify({ phase: boss2?.phase, title: boss2?.phaseTitle }),
+    );
+    const barPhase2 = await until(
+      () => ev(() => document.getElementById('combat-boss-phase')?.textContent ?? ''),
+      (t) => /PHASE 2/.test(t),
+      8000,
+      300,
+    );
+    check('the bar follows the phase', /PHASE 2 · THE COLLECTOR/.test(barPhase2 ?? ''), String(barPhase2));
+    await ev(() => window.__MT_BOSS__({ hpRatio: 0.2 }));
+    const boss3 = await until(() => ev(() => window.__MT_BOSS__()), (b) => b?.phase === 3, 8000, 300);
+    check(
+      '20% hp opens Phase 3 — REQUIITAL OF ALL',
+      boss3?.phase === 3 && boss3?.phaseTitle === 'REQUIITAL OF ALL',
+      JSON.stringify({ phase: boss3?.phase, title: boss3?.phaseTitle }),
+    );
+
+    // arena seal: try to leave, get pulled back to the ring
+    await ev((a) => window.__MT_TP__(a.x + 45, a.z, 0), bossAnchor);
+    const sealed = await until(
+      () =>
+        ev((a) => {
+          const p = window.__MT_PLAYER__().pos;
+          return Math.hypot(p[0] - a.x, p[2] - a.z);
+        }, bossAnchor),
+      (d) => typeof d === 'number' && d <= 27.5,
+      15000,
+      400,
+    );
+    check(
+      'the arena seals around him',
+      typeof sealed === 'number' && sealed <= 27.5,
+      `dist=${typeof sealed === 'number' ? sealed.toFixed(1) : sealed}`,
+    );
+
+    // the last Requital → the verdict (subdue → hold E → KEEP/RELEASE)
+    await ev(() => window.__MT_SUBDUE__('the-overlord'));
+    const bossDown = await until(
+      () => ev(() => window.__MT_BOSS__()),
+      (b) => b?.exists === true && b?.alive === false,
+      15000,
+      400,
+    );
+    check('the Overlord goes down', bossDown?.alive === false && bossDown?.state === 'subdued',
+      JSON.stringify({ state: bossDown?.state, hp: bossDown?.hp }));
+    const bpos = await ev(() => window.__MT_BOSS__());
+    // clear the room first: nothing left standing can kill the AFK player
+    // mid-channel (a death respawn reseats at the spawn point, 500 m off)
+    await ev(() => window.__MT_SUBDUE__());
+    // The phase-3 Overlord hits for >110 — the AFK player died during the
+    // phase checks. Wait out any death first, then take the body and re-seat
+    // on every tick so a late respawn can never drag the glove off the summit.
+    const revived = await until(
+      () => ev(() => window.__MT_COMBAT__().death),
+      (d) => typeof d === 'number' && d <= 0,
+      60000,
+      400,
+    );
+    check('the player gets back up for the last Requital', revived <= 0, String(revived));
+    await ev((p) => window.__MT_TP__(p.x, p.z, 0), bpos);
+    let end = null;
+    const endDeadline = Date.now() + 90000;
+    while (Date.now() < endDeadline) {
+      const st = await ev(() => window.__MT_COMBAT__());
+      if (st?.death > 0) {
+        await ev(() => window.__MT_KEY__('KeyE', false)); // the death screen owns the world
+        await sleep(400);
+        continue;
+      }
+      const bp = await ev(() => window.__MT_BOSS__());
+      if (bp?.exists) await ev((p) => window.__MT_TP__(p.x, p.z, 0), bp);
+      await ev(() => window.__MT_KEY__('KeyE', true));
+      end = await ev(() => window.__MT_ENDING__());
+      if (end?.open) break;
+      await sleep(400);
+    }
+    await ev(() => window.__MT_KEY__('KeyE', false));
+    const diag = await ev(() => ({
+      death: window.__MT_COMBAT__().death,
+      pos: window.__MT_PLAYER__().pos,
+      steal: window.__MT_STEAL__(),
+      boss: window.__MT_BOSS__(),
+    }));
+    check(
+      'the last channel opens the verdict',
+      end?.open === true,
+      JSON.stringify({ end, ...diag }),
+    );
+    const storyYielded = await ev(() => window.__MT_STORY__().open);
+    check('rank 34 yields the story card to the verdict', storyYielded === false, String(storyYielded));
+
+    await ev(() => document.getElementById('ending-release')?.click());
+    const afterChoice = await until(
+      () => ev(() => window.__MT_ENDING__()),
+      (e) => e?.choice === 'release',
+      8000,
+      300,
+    );
+    check('RELEASE is recorded', afterChoice?.choice === 'release', JSON.stringify(afterChoice));
+    const powersAfter = await ev(() => window.__MT_COMBAT__().state.powers);
+    check('RELEASE empties the stolen powers back into the city',
+      Array.isArray(powersAfter) && powersAfter.length === 0, JSON.stringify(powersAfter));
+    const savedEnding = await ev(() => {
+      try {
+        return JSON.parse(localStorage.getItem('mt.save.v1') ?? '{}').ending ?? null;
+      } catch {
+        return 'unreadable';
+      }
+    });
+    check('the verdict lands in the checkpoint', savedEnding === 'release', String(savedEnding));
 
     /* ---------------- verdict ---------------- */
     if (warnings.length) {

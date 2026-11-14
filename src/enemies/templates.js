@@ -113,7 +113,7 @@ export const BEHAVIOURS = {
   },
   boss: {
     arch: 'boss',
-    healthMul: 6.0, // applied to the boss tier curve, not the group curve
+    healthMul: 3.2, // ×bossTier(2.4) ≈ 19k — sized so all three phases land
     damageMul: 1.5,
     attackSpeedMul: 0.6,
     moveSpeedMul: 0.75,

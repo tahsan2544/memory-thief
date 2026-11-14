@@ -675,6 +675,8 @@ async function runMemoryTests(page, errors, warnings) {
         inspect: open('inspect'),
         map: open('map'),
         gear: open('gear'),
+        rank: open('rank'),
+        progress: open('progress'),
         pause: open('pause'),
         panel: open('panel'),
         extract: open('extract'),
@@ -806,6 +808,23 @@ async function runMemoryTests(page, errors, warnings) {
   const ab2 = await until(() => ev(() => window.__MT_ABILITY__()), (a) => a.active === true, 12000);
   check('resonance sight activates', ab2.active === true && ab2.echoes === true, JSON.stringify(ab2));
   check('echo markers cover the city', ab2.echoesTotal >= 10, `${ab2.echoesTotal} echoes`);
+  // Phase 11: the sight projects rank markers over the crews around you —
+  // step into a live territory, let the squad spawn, read the overlay,
+  // then step back out before the rest of the section continues
+  const vAnchor = (await ev(() => window.__MT_GROUPS__())).find((a) => !a.defeated) ?? null;
+  let vShown = 0;
+  let vActive = false;
+  if (vAnchor) {
+    await ev((p) => window.__MT_TP__(p.x, p.z, 0), vAnchor);
+    const vis = await until(() => ev(() => window.__MT_VISION__()), (v) => v.shown >= 1, 7000, 350);
+    vShown = vis?.shown ?? 0;
+    vActive = vis?.active === true;
+    await ev((s) => window.__MT_TP__(s.x - 2.2, s.z + 1.0, Math.PI / 2), warden);
+    await sleep2(500);
+  }
+  check('Resonance Sight projects markers over nearby crews',
+    !!vAnchor && vActive && vShown >= 1,
+    JSON.stringify({ anchor: vAnchor?.id ?? null, active: vActive, shown: vShown }));
   await shot(page, warnings, '18-resonance-sight.png');
   await ev(() => window.__MT_PRESS__('KeyV'));
   const ab3 = await until(() => ev(() => window.__MT_ABILITY__()), (a) => a.active === false, 12000);
@@ -1171,6 +1190,8 @@ async function runProgressionTests(page, errors, warnings) {
   };
   const map = (open) => ev((o) => window.__MT_MAP__(o), open);
   const gear = (open) => ev((o) => window.__MT_GEAR__(o), open);
+  const rankScr = (open) => ev((o) => window.__MT_RANK__(o), open);
+  const progScr = (open) => ev((o) => window.__MT_PROGRESS__(o), open);
   const pause = (open) => ev((o) => window.__MT_PAUSE__(o), open);
   const mem = () => ev(() => window.__MT_MEM__());
   const save = (op, text) => ev((o, t) => window.__MT_SAVE__(o, t), op ?? 'status', text ?? null);
@@ -1212,6 +1233,16 @@ async function runProgressionTests(page, errors, warnings) {
   check('map pins every landmark', lmPins.length === 5, `${lmPins.length} pins`);
   check('map pins the readings you hold', (mp.pins ?? []).filter((x) => x.kind === 'source').length >= 3,
     `${(mp.pins ?? []).filter((x) => x.kind === 'source').length} readings`);
+  // Phase 10: the ladder hides behind discovery — only charted territories
+  // pin, but the next target and the Overlord's beacon are always shown
+  const terrPins = (mp.pins ?? []).filter((x) => x.kind === 'territory');
+  check('map gates the ladder behind discovery', terrPins.length >= 2 && terrPins.length < 34,
+    `${terrPins.length} of 34 shown`);
+  const nextPins = terrPins.filter((x) => x.next === true);
+  check('map flags exactly one next target', nextPins.length === 1,
+    nextPins.map((x) => x.label).join(', ') || 'none');
+  const bossPins = terrPins.filter((x) => x.boss === true);
+  check('map carries the Overlord beacon', bossPins.length === 1, `${bossPins.length} boss pins`);
   const withinBounds =
     mp.player &&
     mp.player.x > 0 && mp.player.y > 0 &&
@@ -1296,6 +1327,46 @@ async function runProgressionTests(page, errors, warnings) {
   const posStable = !chartedTp || (Math.abs(posAfterMap.x - posBeforeMap.x) <= 2 && Math.abs(posAfterMap.z - posBeforeMap.z) <= 2);
   check('map round-trip leaves the player and world untouched',
     (await gen()) === genAtStart && posStable, `gen ${genAtStart}→${await gen()}, chartedTp=${chartedTp}`);
+
+  // Phase 10 discovery rules: territories stay dark until you cross into
+  // them — walk every anchor of the ladder and the chart fills in
+  const disc0 = await ev(() => window.__MT_DISCOVERY__());
+  check('territories stay dark until you cross into them',
+    Array.isArray(disc0.territories) && disc0.territories.length < 34,
+    `${disc0.territories?.length ?? -1}/34 charted at the map`);
+  const anchors = await ev(() => window.__MT_GROUPS__());
+  check('the ladder exposes all 34 anchors', anchors.length === 34, `${anchors.length} anchors`);
+  const walkAnchor = async (a) => {
+    await ev((p) => window.__MT_TP__(p.x, p.z, 0), a);
+    await until(
+      () => ev((id) => window.__MT_DISCOVERY__().territories.includes(id), a.id),
+      (v) => v === true,
+      5000,
+      300,
+    );
+  };
+  for (const a of anchors) await walkAnchor(a);
+  let disc1 = await ev(() => window.__MT_DISCOVERY__());
+  for (let pass = 0; pass < 2 && disc1.territories.length < 34; pass++) {
+    const have = new Set(disc1.territories);
+    for (const a of anchors) if (!have.has(a.id)) await walkAnchor(a);
+    disc1 = await ev(() => window.__MT_DISCOVERY__());
+  }
+  check('crossing into every territory charts the whole ladder',
+    disc1.territories.length === 34, `${disc1.territories.length}/34 charted`);
+  // the full chart pins every territory with its rank numeral
+  await press('KeyM');
+  mp = await until(map, (x) => x.open, 15000);
+  const allTerr = (mp.pins ?? []).filter((x) => x.kind === 'territory');
+  check('a charted map pins every territory on the ladder', allTerr.length === 34, `${allTerr.length} territories`);
+  check('every territory pin carries its rank',
+    allTerr.every((x) => Number.isInteger(x.rank) && x.rank >= 1 && x.rank <= 34),
+    `${allTerr.filter((x) => Number.isInteger(x.rank)).length}/34 ranked`);
+  await press('KeyM');
+  await until(map, (x) => !x.open, 10000);
+  // hand the player back to a known spawn before the mini-map section
+  await ev((d) => window.__MT_SPAWN__(d), 'oldquarter');
+  await sleep(1200);
 
   /* ---- 1b. the corner mini-map ---------------------------------------- */
   let mm = await until(() => ev(() => window.__MT_MINIMAP__()), (x) => x.visible === true, 20000);
@@ -1464,6 +1535,38 @@ async function runProgressionTests(page, errors, warnings) {
   check('equipment round-trip keeps the player and world still',
     (await gen()) === genAtStart && Math.abs(posAfterGearClose.x - posBeforeGearClose.x) <= 2,
     `gen ${genAtStart}→${await gen()}`);
+
+  /* ---- 5b. Phase 14 — the ladder (K) and the climb (T) ---------------- */
+  await press('KeyK');
+  let rk = await until(rankScr, (x) => x.open, 12000);
+  check('K opens the ladder screen', rk.open);
+  check('the ladder carries all 34 rungs in rank order',
+    rk.rows === 34 && (rk.ranks ?? []).every((r, i) => r === i + 1),
+    `rows=${rk.rows} ranks=${(rk.ranks ?? []).slice(0, 6).join(',')}…`);
+  check('nothing stolen yet: the ladder points at rung 1',
+    rk.cleared === 0 && rk.nextRank === 1, `cleared=${rk.cleared} next=${rk.nextRank}`);
+  check('the ladder is grouped into four acts',
+    (rk.acts ?? []).length === 4 && rk.acts[0].done === 0,
+    JSON.stringify(rk.acts));
+  check('the Overlord sits on rung 34', rk.bossRow === 'the-overlord', String(rk.bossRow));
+  await press('KeyK'); // close the ladder
+  rk = await until(rankScr, (x) => !x.open, 10000);
+  check('K closes the ladder round-trip', rk.open === false);
+
+  await press('KeyT');
+  let pr = await until(progScr, (x) => x.open, 12000);
+  check('T opens the progression screen', pr.open);
+  check('fresh climb: rank 0, no powers, no verdict',
+    pr.rank === 0 && pr.rankTitle === 'NOBODY' && pr.powersCount === 0 && pr.verdict === null,
+    JSON.stringify({ rank: pr.rank, title: pr.rankTitle, powers: pr.powersCount, verdict: pr.verdict }));
+  check('knowledge caps read the archive ceilings',
+    pr.knowledgeMax?.hp === 220 && pr.knowledgeMax?.atk === 30 && pr.knowledgeMax?.def === 40,
+    JSON.stringify(pr.knowledgeMax));
+  check('powers column counts the full 44',
+    pr.powersMax === 44, String(pr.powersMax));
+  await press('KeyT'); // close the climb
+  pr = await until(progScr, (x) => !x.open, 10000);
+  check('T closes the climb round-trip', pr.open === false);
 
   /* ---- 6. pause menu: actions, settings, resume ----------------------- */
   await press('Escape');

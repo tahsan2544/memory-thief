@@ -5,7 +5,7 @@
     <link rel="icon" href="data:," />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark" />
-    <title>MEMORY THIEF — Eidolon City</title>
+    <title>MEMORY THIEF v2 — Power-Stealing Open World</title>
   </head>
   <body>
     <div id="app"></div>
@@ -15,7 +15,7 @@
       <div class="loading-box">
         <div class="loading-kicker">PALISADE ARCHIVE // WORLD FORGE</div>
         <h1 class="loading-title">MEMORY THIEF</h1>
-        <div class="loading-sub">EIDOLON CITY — OPEN WORLD INSPECTION BUILD</div>
+        <div class="loading-sub">EIDOLON CITY — POWER-STEALING OPEN WORLD · v2</div>
         <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
         <div id="loading-status" class="loading-status">Initialising…</div>
         <div id="loading-detail" class="loading-detail"></div>
@@ -37,18 +37,20 @@
             <div><kbd>LMB</kbd> strike · <kbd>F</kbd> heavy · <kbd>G</kbd> style special</div>
             <div><kbd>C</kbd> dodge · <kbd>Q</kbd> lock-on · <kbd>RMB</kbd> guard / parry</div>
             <div><kbd>E</kbd> interact · <kbd>M</kbd> city map · <kbd>Tab</kbd> mini-map</div>
-            <div><kbd>J</kbd> journal · <kbd>I</kbd> equipment · <kbd>1</kbd>–<kbd>9</kbd> weapons</div>
+            <div><kbd>J</kbd> journal · <kbd>I</kbd> gear · <kbd>1</kbd>–<kbd>9</kbd> weapons</div>
+            <div><kbd>K</kbd> the ladder · <kbd>T</kbd> your climb · <kbd>V</kbd> sight</div>
           </div>
           <div class="welcome-file">
-            <div class="welcome-file-head">THE GLOVE</div>
-            <div><kbd>E</kbd> at a reading — extract the memory</div>
+            <div class="welcome-file-head">THE GLOVE · REQUIITAL</div>
             <div>Hold <kbd>E</kbd> on the fallen — steal their style</div>
+            <div>34 rungs · every gang keeps one memory</div>
+            <div><kbd>E</kbd> at a reading — extract the memory</div>
             <div><kbd>Enter</kbd> — reconstruct what the city buried</div>
             <div><kbd>V</kbd> — Resonance Sight, once it awakens</div>
           </div>
         </div>
         <button id="welcome-start" type="button" class="welcome-start">BEGIN THE WALK</button>
-        <div class="welcome-note">Guards watch, sealed zones forbid you, sound tells on you. Move with intent.</div>
+        <div class="welcome-note">Beat a gang, hold E, take everything it knows. Climb the 34-rung ladder and dethrone the Overlord.</div>
         <div class="welcome-meta">
           <span id="welcome-clock" class="welcome-clock">22:00 · NIGHT</span>
           <span class="welcome-meta-sep">·</span>
@@ -68,7 +70,7 @@
           <div><b>LMB</b> strike · <b>F</b> heavy · <b>G</b> special · <b>C</b> dodge · <b>Q</b> lock-on · <b>RMB</b> guard</div>
           <div><b>1–9</b> weapons · hold <b>E</b> on the fallen to steal their style · <b>R</b> respawn</div>
           <div><b>J</b> journal · <b>M</b> map · <b>Tab</b> mini-map · <b>I</b> gear · <b>V</b> sight · <b>N</b> new seed</div>
-          <div><b>P</b>/<b>Esc</b> pause · <b>H</b> hide HUD · <b>F5</b> inspection camera</div>
+          <div><b>K</b> ladder · <b>T</b> climb · <b>P</b>/<b>Esc</b> pause · <b>H</b> hide HUD · <b>F5</b> inspection camera</div>
         </div>
         <div class="hud-controls hidden" id="controls-inspect">
           <div><b>Click</b> capture mouse · <b>W A S D</b> fly · <b>Q / E</b> down / up</div>
@@ -241,6 +243,30 @@
 
     <div id="toast" class="toast hidden"></div>
 
+    <!-- ================= MEMORY STORY CARD (STEAL) ====================== -->
+    <div id="story" class="story hidden" role="status" aria-live="polite"></div>
+
+    <!-- ================== ENDING — KEEP / RELEASE ======================= -->
+    <div id="ending" class="ending hidden" role="dialog" aria-modal="true" aria-label="The ending">
+      <div class="ending-kicker">THE SUMMIT · RANK 34</div>
+      <h3 class="ending-title">The Overlord</h3>
+      <p class="ending-beg">
+        “Take it — take everything. I cannot carry it anymore. The pyramid was
+        never mine; it only ever waited for the next pair of hands.”
+      </p>
+      <p class="ending-fact" id="ending-fact"></p>
+      <div class="ending-choices">
+        <button id="ending-keep" class="ending-btn ending-keep" type="button">
+          <span class="ending-btn-name">KEEP</span>
+          <span class="ending-btn-desc">Take the pyramid. Become the new rank zero — the city answers to the glove.</span>
+        </button>
+        <button id="ending-release" class="ending-btn ending-release" type="button">
+          <span class="ending-btn-name">RELEASE</span>
+          <span class="ending-btn-desc">Let it all go. Every stolen power unspools back into the city, empty-handed.</span>
+        </button>
+      </div>
+    </div>
+
     <!-- ======================= GAMEPLAY OVERLAYS ======================= -->
     <div id="crosshair" class="crosshair" aria-hidden="true"></div>
 
@@ -270,10 +296,22 @@
           <span class="vital-tag">PS</span>
           <div class="vital-track"><div id="combat-ps" class="vital-fill vital-ps"></div></div>
         </div>
-        <div class="combat-loadout">
-          <span id="combat-style">Wrapped Fists</span>
-          <span id="combat-weapon" class="combat-weapon">Wrapped fists</span>
+      </div>
+
+      <!-- style chip: own panel, bottom-right (the radar owns top-right) -->
+      <div class="combat-loadout">
+        <span id="combat-style">Wrapped Fists</span>
+        <span id="combat-weapon" class="combat-weapon">Wrapped fists</span>
+        <span class="combat-loadout-hint">1–9 swap</span>
+      </div>
+
+      <div id="combat-boss" class="combat-boss hidden">
+        <div class="combat-boss-head">
+          <span id="combat-boss-name">THE OVERLORD</span>
+          <span id="combat-boss-phase" class="combat-boss-phase">PHASE 1 · THE WALL</span>
         </div>
+        <div class="combat-boss-track"><div id="combat-boss-fill" class="combat-boss-fill"></div></div>
+        <div class="combat-boss-posture"><div id="combat-boss-posture-fill" class="combat-boss-posture-fill"></div></div>
       </div>
 
       <div id="combat-target" class="combat-target hidden">
@@ -290,6 +328,12 @@
 
     <!-- ============================= HOTBAR ============================= -->
     <div id="hotbar" class="hotbar hidden" aria-label="Weapon hotbar"></div>
+
+    <!-- =================== STOLEN POWER SLOTS (LEFT) ==================== -->
+    <div id="powers" class="powers hidden" aria-label="Stolen powers"></div>
+
+    <!-- =================== RESONANCE SIGHT MARKERS (V) ================== -->
+    <div id="vision" class="vision hidden" aria-hidden="true"></div>
 
     <!-- ======================== REQUIITAL CHANNEL ======================= -->
     <div id="steal" class="steal hidden">
@@ -384,6 +428,57 @@
           </section>
         </div>
         <div class="gear-hint"><kbd>I</kbd> or <kbd>Esc</kbd> close</div>
+      </div>
+    </div>
+
+    <!-- ========================= RANK LADDER (K) ========================= -->
+    <div id="rank" class="rank hidden" role="dialog" aria-modal="true" aria-label="The ladder — 34 encounters">
+      <div class="rank-frame">
+        <div class="gear-head">
+          <div>
+            <div class="gear-kicker">LEDGER // 34 ENCOUNTERS</div>
+            <div class="gear-title">THE LADDER</div>
+          </div>
+          <div class="gear-motes" id="rank-count"></div>
+          <button id="rank-close" type="button" aria-label="Close the ladder">✕</button>
+        </div>
+        <div class="gear-how" id="rank-how"></div>
+        <div class="rank-acts" id="rank-acts"></div>
+        <div class="gear-hint"><kbd>K</kbd> or <kbd>Esc</kbd> close</div>
+      </div>
+    </div>
+
+    <!-- ====================== PROGRESSION (T) =========================== -->
+    <div id="progress" class="progress hidden" role="dialog" aria-modal="true" aria-label="Your climb">
+      <div class="progress-frame">
+        <div class="gear-head">
+          <div>
+            <div class="gear-kicker">THIEF // RESONANCE</div>
+            <div class="gear-title">YOUR CLIMB</div>
+          </div>
+          <div class="gear-motes" id="progress-verdict"></div>
+          <button id="progress-close" type="button" aria-label="Close progression">✕</button>
+        </div>
+        <div class="gear-how" id="progress-how"></div>
+        <div class="progress-cols">
+          <section class="progress-col">
+            <div class="gear-col-title">RANK</div>
+            <div id="progress-rank" class="progress-body"></div>
+          </section>
+          <section class="progress-col">
+            <div class="gear-col-title">KNOWLEDGE</div>
+            <div id="progress-knowledge" class="progress-body"></div>
+          </section>
+          <section class="progress-col">
+            <div class="gear-col-title">STOLEN POWERS</div>
+            <div id="progress-powers" class="progress-body"></div>
+          </section>
+          <section class="progress-col">
+            <div class="gear-col-title">THE CLIMB</div>
+            <div id="progress-climb" class="progress-body"></div>
+          </section>
+        </div>
+        <div class="gear-hint"><kbd>T</kbd> or <kbd>Esc</kbd> close</div>
       </div>
     </div>
 

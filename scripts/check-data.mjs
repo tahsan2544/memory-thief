@@ -32,6 +32,13 @@ import {
   rankTitle,
   difficultyColor,
 } from '../src/enemies/ranking.js';
+import {
+  ACTS,
+  BEAT_TYPES,
+  beatCount,
+  storyBeatsFor,
+  typeOf,
+} from '../src/story/storyBeats.js';
 
 const problems = [];
 function check(cond, message) {
@@ -169,6 +176,48 @@ check(nextTarget(ordered.map((g) => g.id)) === null, 'full clear → no target')
 check(rankTitle(0) === 'NOBODY', 'rank title start');
 check(rankTitle(34).length > 0, 'rank title end');
 check(difficultyColor(GROUP_BY_ID[BOSS_ID]) != null, 'boss difficulty colour');
+// ---- Phase 13: the summit ------------------------------------------------
+check(GROUP_BY_ID[BOSS_ID]?.encounter === 'boss', 'BOSS_ID must be encounter=boss');
+check(GROUP_BY_ID[BOSS_ID]?.rank === 34, 'the Overlord sits on rank 34');
+check(behaviourFor(GROUP_BY_ID[BOSS_ID]).arch === 'boss', 'boss arch wired');
+
+// ---- 7. story beats (Phase 12) -------------------------------------------
+check(beatCount() === GROUP_COUNT, `every group needs a beat (found ${beatCount()} of ${GROUP_COUNT})`);
+const typeUse = new Set();
+for (const g of GROUPS) {
+  const t = typeOf(g);
+  check(BEAT_TYPES.includes(t), `${g.id}: unknown beat type ${t}`);
+  typeUse.add(t);
+  const beats = storyBeatsFor(g, new Set());
+  check(beats.facets.length === 5, `${g.id}: story needs 5 facets, found ${beats.facets.length}`);
+  check(
+    beats.facets.every((f) => typeof f.text === 'string' && f.text.length > 0),
+    `${g.id}: empty facet text`,
+  );
+  check(beats.act.factLocked === true, `${g.id}: act fact must start locked`);
+  const open = storyBeatsFor(g, GROUPS.map((x) => x.id));
+  check(open.act.factLocked === false, `${g.id}: act fact must unlock on full clear`);
+}
+for (const t of BEAT_TYPES) check(typeUse.has(t), `beat type ${t} is never used`);
+for (let i = 1; i < GROUPS.length; i++) {
+  check(
+    typeOf(GROUPS[i]) !== typeOf(GROUPS[i - 1]),
+    `adjacent rungs ${GROUPS[i - 1].rank}/${GROUPS[i].rank} share a beat type`,
+  );
+}
+const mirrors = GROUPS.filter((g) => typeOf(g) === 'mirror').map((g) => g.rank);
+check(
+  mirrors.length === 2 && mirrors.includes(28) && mirrors.includes(33),
+  `mirror beats belong on ranks 28 + 33, found [${mirrors.join(', ')}]`,
+);
+check(ACTS.length === 4, 'four acts of the ladder');
+check(
+  ACTS[0].from === 1 && ACTS[ACTS.length - 1].to === MAX_RANK,
+  'act ranges must cover 1..34',
+);
+for (let i = 1; i < ACTS.length; i++) {
+  check(ACTS[i].from === ACTS[i - 1].to + 1, `act ${ACTS[i].n} must start after act ${ACTS[i - 1].n}`);
+}
 
 // ---- report ---------------------------------------------------------------
 if (problems.length) {
@@ -178,7 +227,8 @@ if (problems.length) {
 } else {
   console.log(
     `check-data OK — ${STYLES.length} styles · ${WEAPONS.length} weapons · ` +
-      `${POWERS.length} powers · ${GROUP_COUNT} encounters (ranks 1–${MAX_RANK})`,
+      `${POWERS.length} powers · ${GROUP_COUNT} encounters (ranks 1–${MAX_RANK}) · ` +
+      `${beatCount()} story beats`,
   );
 }
 

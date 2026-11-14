@@ -116,9 +116,16 @@ export function validateDoc(raw) {
       abilityUnlocked: !!mem.abilityUnlocked,
       abilitySource: mem.abilitySource ? str(mem.abilitySource) : null,
     },
-    discovery: { districts: list(disc.districts), landmarks: list(disc.landmarks) },
+    discovery: {
+      districts: list(disc.districts),
+      landmarks: list(disc.landmarks),
+      // Phase 10: additive field — an older checkpoint degrades to none charted
+      territories: list(disc.territories),
+    },
     progression: { spent },
     combat,
+    // Phase 13: the verdict at the summit — additive, older saves → null
+    ending: raw.ending === 'keep' || raw.ending === 'release' ? raw.ending : null,
   };
   return { ok: true, doc, issues };
 }
@@ -159,6 +166,7 @@ export function buildSnapshot({
   discovery,
   progression,
   combat = null, // v2: vitals/loadout/ledger — dropping it wrote an empty ledger
+  ending = null, // Phase 13: 'keep' | 'release' | null
   savedAt = Date.now(),
 }) {
   const v = validateDoc({
@@ -172,6 +180,7 @@ export function buildSnapshot({
     discovery,
     progression,
     combat,
+    ending,
   });
   if (!v.ok) return null; // caller reports "could not save" — never writes junk
   return v.doc;

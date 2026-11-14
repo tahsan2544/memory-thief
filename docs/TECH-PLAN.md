@@ -318,17 +318,30 @@ eaten; a11y (`mt.a11y.v1`) and audio (`mt.audio.v1`) keys survive.
 ## 9. CURRENT STATUS
 
 - [x] Phase 1 — design + architecture foundation (this phase)
-- [ ] Phase 2 — basic combat
-- [ ] Phase 3 — health/damage/dodge
-- [ ] Phase 4 — first enemy AI
-- [ ] Phase 5 — groups & weapon restriction
-- [ ] Phase 6 — power/memory stealing
-- [ ] Phase 7 — fighting styles wired
-- [ ] Phase 8 — weapons & hotbar
-- [ ] Phase 9 — ranking & progression
-- [ ] Phase 10 — map markers
-- [ ] Phase 11 — stealth & clear vision
-- [ ] Phase 12 — story & missions
-- [ ] Phase 13 — Overlord boss
-- [ ] Phase 14 — complete HUD & polish
-- [ ] Phase 15 — optimize & test
+- [x] Phase 2 — basic combat
+- [x] Phase 3 — health/damage/dodge
+- [x] Phase 4 — first enemy AI
+- [x] Phase 5 — groups & weapon restriction
+- [x] Phase 6 — power/memory stealing
+- [x] Phase 7 — fighting styles wired
+- [x] Phase 8 — weapons & hotbar
+- [x] Phase 9 — ranking & progression
+- [x] Phase 10 — map markers
+- [x] Phase 11 — stealth & clear vision
+- [x] Phase 12 — story & missions
+- [x] Phase 13 — Overlord boss
+- [x] Phase 14 — complete HUD & polish
+- [x] Phase 15 — optimize & test
+
+**Phase 15 honest notes (v2 ship):**
+
+- Actor cap shipped as a flat `MAX_FIGHTERS = 8` (not the "quality-weighted"
+  budget sketched in §7) — streamed within a 46 m activation ring, despawned
+  beyond 70 m; measured honest under SwiftShader.
+- The standalone `L` style-library screen was **not** built — styles are
+  visible/swappable via the Requital, hotbar and the `T` climb screen.
+- Gates at ship: `check:data` ✓ · `probe-map` 13/13 ✓ · `probe-combat`
+  55/55 ✓ (incl. arena seal + verdict) · `smoke` 303/303 ✓.
+- Arena-seal fix (Phase 13 bug): the ring now arms only when the player
+  actually enters it (`bossSealArmed`), so landmarks 26–70 m outside the
+  Overlord's anchor (e.g. the warden plaza) stay reachable while he stands.

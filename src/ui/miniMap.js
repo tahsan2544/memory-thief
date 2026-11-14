@@ -40,8 +40,8 @@ let lastDraw = 0;
 let lastPlayer = null; // { x, z } of the previous draw (smoke reads this)
 let range = RANGE_WALK; // smoothed live zoom
 let pins = {
-  onmap: { landmarks: 0, readings: 0 },
-  offscreen: { landmarks: 0, readings: 0 },
+  onmap: { landmarks: 0, readings: 0, markers: 0 },
+  offscreen: { landmarks: 0, readings: 0, markers: 0 },
 };
 
 function cssColor(hexNum, alpha = 1) {
@@ -158,8 +158,8 @@ function draw() {
   // memory readings you hold (violet rings — violet pips when off-window)
   const half = size / 2;
   pins = {
-    onmap: { landmarks: 0, readings: 0 },
-    offscreen: { landmarks: 0, readings: 0 },
+    onmap: { landmarks: 0, readings: 0, markers: 0 },
+    offscreen: { landmarks: 0, readings: 0, markers: 0 },
   };
   for (const s of data.sources ?? []) {
     if (!s.held) continue;
@@ -214,6 +214,71 @@ function draw() {
     ctx.strokeStyle = known ? 'rgba(255, 236, 190, 0.9)' : 'rgba(127, 141, 176, 0.55)';
     ctx.lineWidth = 1;
     ctx.stroke();
+  }
+
+  // territory markers (Phase 10): rank-coloured rings with numerals, gold
+  // glyphs for cleared ground, a pulsing amber ring on the next target and a
+  // crimson beacon on the Overlord. Off-frame, only those two keep an arrow —
+  // the rest of the ladder stays quiet until you are near it.
+  const nowMs = performance.now();
+  for (const m of data.markers ?? []) {
+    const mx = sx(m.x);
+    const mz = sz(m.z);
+    const mdx = mx - half;
+    const mdz = mz - half;
+    if (Math.abs(mdx) > half - 3 || Math.abs(mdz) > half - 3) {
+      if (m.next || m.boss) {
+        const e = edgePoint(mdx, mdz, size, 13);
+        drawPip(ctx, e.x, e.y, e.ang, m.boss ? 'rgba(214, 62, 80, 0.95)' : 'rgba(255, 196, 92, 0.95)');
+        pins.offscreen.markers++;
+      }
+      continue;
+    }
+    pins.onmap.markers++;
+    if (m.defeated) {
+      // cleared: a gold ring with a tick inside
+      ctx.beginPath();
+      ctx.arc(mx, mz, 4.5, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 206, 104, 0.9)';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(mx - 2.2, mz + 0.2);
+      ctx.lineTo(mx - 0.6, mz + 2);
+      ctx.lineTo(mx + 2.6, mz - 2.2);
+      ctx.strokeStyle = 'rgba(255, 240, 200, 0.95)';
+      ctx.lineWidth = 1.3;
+      ctx.stroke();
+      continue;
+    }
+    const col = cssColor(m.color ?? 0x6f9fd8, 1);
+    if (m.boss) {
+      const pulse = 6.5 + Math.sin(nowMs / 320) * 1.6;
+      ctx.beginPath();
+      ctx.arc(mx, mz, pulse, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(214, 62, 80, 0.55)';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+    }
+    if (m.next) {
+      const pulse = 8 + Math.sin(nowMs / 380) * 1.8;
+      ctx.beginPath();
+      ctx.arc(mx, mz, pulse, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 196, 92, 0.85)';
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.arc(mx, mz, 5, 0, Math.PI * 2);
+    ctx.strokeStyle = col;
+    ctx.lineWidth = m.boss ? 2 : 1.4;
+    ctx.stroke();
+    ctx.fillStyle = cssColor(m.color ?? 0x6f9fd8, 0.28);
+    ctx.fill();
+    ctx.font = '700 8px "Cascadia Mono", Consolas, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(235, 244, 255, 0.95)';
+    ctx.fillText(String(m.rank), mx, mz + 3);
   }
 
   // ---- you: facing cone + chevron --------------------------------------

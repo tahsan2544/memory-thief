@@ -320,6 +320,22 @@ export class CombatSystem {
       this.counterUntil = 0;
       this.cb.onEvent?.('COUNTER');
     }
+    // Phase 11 — spine-break opener: crouched, unseen, at their back. One
+    // bonus hit rides the strike — strong, never an instant kill.
+    let spine = false;
+    if (player.crouching && a.kind !== 'special') {
+      const mark = primary.f;
+      if (mark.state === 'idle' || mark.state === 'patrol') {
+        const md = Math.hypot(mark.x - p.x, mark.z - p.z);
+        const toPlayer = Math.atan2(p.x - mark.x, p.z - mark.z);
+        const off = Math.abs(Math.atan2(Math.sin(mark.yaw - toPlayer), Math.cos(mark.yaw - toPlayer)));
+        if (md <= 1.8 && off > 2.0) {
+          spine = true;
+          dmg += stats.lightDamage; // one bonus hit's worth of damage
+          this.cb.onEvent?.('SPINE BREAK');
+        }
+      }
+    }
     const posture = stats.posturePerHit * (a.kind === 'heavy' ? 2 : a.kind === 'special' ? 1.5 : 1);
 
     for (const t of targets) {

@@ -179,6 +179,74 @@ function draw() {
     });
   }
 
+  // territory pins (Phase 10): rank-coloured rings with numerals, gold
+  // glyphs for cleared ground, a crown on the next target, a crimson beacon
+  // on the Overlord's arena
+  for (const m of data.markers ?? []) {
+    const tx = sx(m.x);
+    const ty = sz(m.z);
+    const col = cssColor(m.color ?? 0x6f9fd8, 1);
+    if (m.defeated) {
+      ctx.beginPath();
+      ctx.arc(tx, ty, 6, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 206, 104, 0.9)';
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(tx - 3, ty + 0.5);
+      ctx.lineTo(tx - 0.8, ty + 2.8);
+      ctx.lineTo(tx + 3.4, ty - 3);
+      ctx.strokeStyle = 'rgba(255, 240, 200, 0.95)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    } else {
+      if (m.boss) {
+        ctx.beginPath();
+        ctx.arc(tx, ty, 13, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(214, 62, 80, 0.5)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(tx, ty, 8, 0, Math.PI * 2);
+      ctx.strokeStyle = col;
+      ctx.lineWidth = m.next ? 2.4 : 1.6;
+      ctx.stroke();
+      ctx.fillStyle = cssColor(m.color ?? 0x6f9fd8, 0.24);
+      ctx.fill();
+      ctx.font = '700 9px "Cascadia Mono", Consolas, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(235, 244, 255, 0.95)';
+      ctx.fillText(String(m.rank), tx, ty + 3.2);
+      // leader crown over the pin you are meant to fight next (or the boss)
+      if (m.next || (m.boss && !m.defeated)) {
+        ctx.beginPath();
+        ctx.moveTo(tx - 6, ty - 11);
+        ctx.lineTo(tx - 3, ty - 15);
+        ctx.lineTo(tx, ty - 11.5);
+        ctx.lineTo(tx + 3, ty - 15);
+        ctx.lineTo(tx + 6, ty - 11);
+        ctx.closePath();
+        ctx.fillStyle = m.boss ? 'rgba(214, 62, 80, 0.95)' : 'rgba(255, 196, 92, 0.95)';
+        ctx.fill();
+      }
+      if (m.next) {
+        ctx.font = '700 9px "Cascadia Mono", Consolas, monospace';
+        ctx.fillStyle = 'rgba(255, 214, 130, 0.95)';
+        ctx.fillText('NEXT', tx, ty + 20);
+      }
+    }
+    pins.push({
+      id: `grp:${m.id}`,
+      kind: 'territory',
+      label: `${m.rank} · ${m.name}`,
+      x: tx,
+      y: ty,
+      known: m.defeated,
+      detail: m,
+    });
+  }
+
   // hover / selection halos (drawn under the player)
   for (const p of pins) {
     if (p.id !== hover && p.id !== selected) continue;
@@ -220,7 +288,11 @@ function draw() {
     const d = data.discovery ?? {};
     const dd = (d.districts ?? []).length;
     const dl = (d.landmarks ?? []).length;
-    counts.textContent = `${dd}/5 DISTRICTS · ${dl}/5 LANDMARKS · ${pins.filter((p) => p.kind === 'source').length} READINGS`;
+    const dt = (d.territories ?? []).length;
+    const cleared = (data.markers ?? []).filter((m) => m.defeated).length;
+    counts.textContent =
+      `${dd}/5 DISTRICTS · ${dl}/5 LANDMARKS · ${pins.filter((p) => p.kind === 'source').length} READINGS` +
+      ` · ${dt}/34 CHARTED · ${cleared}/34 CLEARED`;
   }
 
   renderDetail();
@@ -259,8 +331,23 @@ function renderDetail() {
       '<li><i class="lg lg-landmark"></i>Landmark — discovered</li>' +
       '<li><i class="lg lg-unknown"></i>Landmark — not visited yet</li>' +
       '<li><i class="lg lg-reading"></i>Memory reading held</li>' +
+      '<li><i class="lg lg-territory"></i>Enemy territory — ring colour is its difficulty</li>' +
+      '<li><i class="lg lg-cleared"></i>Cleared territory — gold with a tick</li>' +
+      '<li><i class="lg lg-crown"></i>Crown — your next target (the Overlord wears it in crimson)</li>' +
       '</ul>' +
       '<p class="map-note">Walk close to a landmark to put its name on the map.</p>';
+    return;
+  }
+  if (p.kind === 'territory') {
+    const m = p.detail ?? {};
+    const state = m.defeated ? 'CLEARED' : m.next ? 'YOUR NEXT TARGET' : 'STANDING';
+    const body = m.defeated
+      ? `Cleared. ${m.name} taught you everything they had — rank ${m.rank} of 34 is yours.`
+      : `${m.territory ?? m.district ?? ''} · ${m.members ?? '?'} fighters hold this ground. Beat them, then hold E for the Requital.`;
+    box.innerHTML =
+      `<div class="map-detail-kicker">TERRITORY · ${state}</div>` +
+      `<div class="map-detail-title">${m.rank} · ${p.label.replace(/^\d+\s·\s/, '')} — ${m.title ?? ''}</div>` +
+      `<p class="map-detail-body">${body}</p>`;
     return;
   }
   if (p.kind === 'landmark') {
@@ -371,7 +458,18 @@ export function mapSnapshot() {
     selected,
     counts: el('map-counts')?.textContent ?? '',
     canvas: canvas ? { w: canvas.clientWidth, h: canvas.clientHeight } : null,
-    pins: pins.map((p) => ({ id: p.id, kind: p.kind, label: p.label, x: Math.round(p.x), y: Math.round(p.y), known: !!p.known })),
+    pins: pins.map((p) => ({
+      id: p.id,
+      kind: p.kind,
+      label: p.label,
+      x: Math.round(p.x),
+      y: Math.round(p.y),
+      known: !!p.known,
+      // Phase 10 territory flags (absent on other pin kinds)
+      ...(p.kind === 'territory' && p.detail
+        ? { next: !!p.detail.next, boss: !!p.detail.boss, defeated: !!p.detail.defeated, rank: p.detail.rank }
+        : {}),
+    })),
     detailTitle: el('map-detail')?.querySelector('.map-detail-title')?.textContent ?? null,
     player: (() => {
       const data = cbs?.data?.();

@@ -106,6 +106,22 @@ import {
   renderEquipment,
 } from './ui/equipmentScreen.js';
 import {
+  closeRank,
+  initRankScreen,
+  isRankOpen,
+  openRank,
+  rankHandleKey,
+  rankScreenSnapshot,
+} from './ui/rankScreen.js';
+import {
+  closeProgress,
+  initProgressScreen,
+  isProgressOpen,
+  openProgress,
+  progressHandleKey,
+  progressScreenSnapshot,
+} from './ui/progressScreen.js';
+import {
   closePause,
   initPauseMenu,
   isPauseOpen,
@@ -119,12 +135,12 @@ import { createTouchControls } from './ui/touchControls.js';
 
 /* ---- V2 combat (docs/GAME-DESIGN.md §2–§10) --------------------------- */
 import { CombatSystem } from './combat/combatSystem.js';
-import { PlayerCombatState } from './combat/playerState.js';
+import { MAX_KNOWLEDGE, PlayerCombatState } from './combat/playerState.js';
 import { STYLE_BY_ID } from './combat/styles.js';
 import { WEAPON_BY_ID } from './weapons/weapons.js';
 import { Spawner } from './enemies/spawner.js';
 import { StealChannel, STEAL_REACH } from './powers/steal.js';
-import { rankTitle } from './enemies/ranking.js';
+import { rankTitle, nextTarget, difficultyColor } from './enemies/ranking.js';
 import {
   clearCombatFx,
   initCombatHud,
@@ -135,6 +151,20 @@ import {
   updateCombatHud,
 } from './ui/combatHud.js';
 import { flashHotbarSlot, initHotbar, setHotbarVisible, updateHotbar } from './ui/hotbar.js';
+import { initPowerSlots, setPowerSlotsVisible, updatePowerSlots } from './ui/powerSlots.js';
+import { initVision, setVisionProjector, updateVision, visionState } from './ui/vision.js';
+import { storyBeatsFor, ACTS, actProgress } from './story/storyBeats.js';
+import { showStoryCard, storyCardState } from './ui/storyCard.js';
+import {
+  showEnding,
+  isEndingOpen,
+  endingChoice,
+  endingState,
+  resetEnding,
+  setEndingChoice,
+} from './ui/ending.js';
+import { BOSS_ID } from './enemies/groups.js';
+import { POWER_BY_ID } from './powers/powers.js';
 
 /* --------------------------------------------------------------------- *
  * Bootstrap
@@ -375,6 +405,9 @@ initStealthHud();
 initCombatHud();
 setCombatProjector(app.camera, app.renderer.domElement);
 initHotbar();
+initPowerSlots();
+initVision();
+setVisionProjector(app.camera, app.renderer.domElement);
 
 const combatState = new PlayerCombatState();
 let deathT = 0; // seconds until the get-up after a defeat
@@ -394,7 +427,11 @@ const combat = new CombatSystem({
     },
     onBlocked: () => playCue('block'),
     onDodged: () => playCue('dodge'),
-    onEvent: (text) => spawnCombatEvent(text, /broken|not enough/i.test(text) ? 'bad' : 'info'),
+    onEvent: (text) =>
+      spawnCombatEvent(
+        text,
+        /broken|not enough/i.test(text) ? 'bad' : /spine/i.test(text) ? 'good' : 'info',
+      ),
     onPlayerDamaged: (amount) => {
       const p = player?.position;
       if (p) spawnDamageNumber({ x: p.x, y: (player.renderY ?? p.y) + 1.9, z: p.z }, `-${amount}`, 'taken');
@@ -438,6 +475,23 @@ const spawner = new Spawner({
       }
     },
     onBlink: () => spawnCombatEvent('BLINK', 'info'),
+    // ---- Phase 13: the Overlord's phase machine --------------------------
+    onBossPhase: (f, phase, _prev, title) => {
+      spawnCombatEvent(`PHASE ${phase} — ${title}`, phase === 3 ? 'bad' : 'good');
+      toast(`${f.group.name} changes — ${title}`, 3200);
+      playCue('steal');
+      // the arena feels the shift — resonance spills through the underarchive
+      world?.cityLife?.emitFrom('resonance', f.x, f.z);
+    },
+    onBossWindow: (f) => {
+      spawnCombatEvent('RECOVERY WINDOW', 'good');
+      playCue('parry');
+      spawnDamageNumber({ x: f.x, y: 2.6, z: f.z }, 'GUARD DOWN', 'steal');
+    },
+    getPowerHues: () =>
+      combatState.powers.size
+        ? [...combatState.powers].map((id) => POWER_BY_ID[id]?.hue).filter((h) => Number.isFinite(h))
+        : [],
   },
 });
 
@@ -451,6 +505,11 @@ const steal = new StealChannel({
       playCue('steal');
       spawnCombatEvent('REQUITAL', 'good');
       spawnDamageNumber({ x: fighter.x, y: 1.8, z: fighter.z }, 'MEMORY TAKEN', 'steal');
+      // the ground you just took charts, and the memory inside it points at
+      // the next rung of the ladder (Phase 10 discovery — the "memory" rule)
+      discovery.visitTerritory(group.id);
+      const nxt = nextTarget(combatState.defeated);
+      const lead = nxt && discovery.visitTerritory(nxt.id) ? ` — memory leads to ${nxt.name}` : '';
       const styleName = grant.style ? STYLE_BY_ID[grant.style]?.name : null;
       const bits = [
         styleName ? `${styleName} learned` : null,
@@ -458,12 +517,42 @@ const steal = new StealChannel({
         grant.powers.length ? `${grant.powers.length} power${grant.powers.length > 1 ? 's' : ''}` : null,
         grant.firstTime ? null : 'knowledge deepened',
       ].filter(Boolean);
-      toast(`${group.name} robbed — ${bits.join(' · ') || 'memory taken'}`, 4600);
+      toast(`${group.name} robbed — ${bits.join(' · ') || 'memory taken'}${lead}`, lead ? 5600 : 4600);
+      // Phase 12/13 — the five-facet memory choreography rides the steal;
+      // at rank 34 the card gives way to the verdict itself (§14b)
+      const beats = storyBeatsFor(group, combatState.defeated);
+      if (group.id === BOSS_ID) {
+        showEnding({ fact: beats.act.fact, onChoose: applyEndingChoice });
+      } else {
+        showStoryCard(beats);
+      }
       if (grant.weapon) flashHotbarSlot(Math.max(0, combatState.hotbar.indexOf(grant.weapon)));
       applyCombatHudVisibility(); // a first steal can fill an empty slot
     },
   },
 });
+
+/**
+ * Phase 13 — KEEP or RELEASE (GAME-DESIGN §14b). The mechanical half of the
+ * verdict: RELEASE empties the stolen powers (the city gets them back),
+ * KEEP leaves the ladder intact. Either way the checkpoint records it.
+ */
+function applyEndingChoice(c) {
+  if (c === 'release') {
+    combatState.powers.clear(); // every stolen power unspools back
+    updatePowerSlots(combatState.powers);
+    applyCombatHudVisibility();
+    doSaveGame(); // persist the emptied loadout BEFORE the final word
+    spawnCombatEvent('THE REQUIITAL RELEASES', 'good');
+    toast('RELEASED — every stolen power unspools back into the city', 5600);
+    playCue('ability-off');
+  } else {
+    doSaveGame();
+    spawnCombatEvent('THE PYRAMID KEEPS YOU', 'good');
+    toast('KEPT — you are the pyramid now, rank zero of the new ladder', 5600);
+    playCue('steal');
+  }
+}
 
 /* --------------------------------------------------------------------- *
  * Phase 6 — interface screens + progression wiring
@@ -507,6 +596,17 @@ initEquipmentScreen({
       toast('Not enough resonance motes', 2200);
     }
   },
+  onClose: () => syncLock(),
+});
+
+// Phase 14 — the 34-rung ladder (K) and the climb readout (T)
+initRankScreen({
+  data: () => rankData(),
+  onClose: () => syncLock(),
+});
+
+initProgressScreen({
+  data: () => progressData(),
   onClose: () => syncLock(),
 });
 
@@ -707,6 +807,7 @@ function applyCombatHudVisibility() {
   const on = mode === 'play' && hudVisible;
   setCombatHudVisible(on);
   setHotbarVisible(on && combatState.hotbar.length > 0);
+  setPowerSlotsVisible(on && combatState.powers.size > 0);
 }
 
 function applyModeUi() {
@@ -836,6 +937,8 @@ async function generate({ quiet = false } = {}) {
   // the living city is world state: a fresh world starts from a clean slate
   stealth.reset();
   lastZoneId = '';
+  bossSealArmed = false; // a fresh world has no sealed arena yet
+  bossSealToast = false;
 
   // tear down the previous world (materials/textures are cached and reused)
   if (world) {
@@ -977,7 +1080,10 @@ function anyOverlayOpen() {
     !!extracting ||
     isMapOpen() ||
     isEquipmentOpen() ||
-    isPauseOpen()
+    isRankOpen() || // Phase 14: the ladder (K)
+    isProgressOpen() || // Phase 14: the climb (T)
+    isPauseOpen() ||
+    isEndingOpen() // Phase 13: the KEEP/RELEASE choice owns the screen
   );
 }
 
@@ -1169,6 +1275,38 @@ function handlePressed(codes) {
         }
         syncLock();
       }
+    } else if (code === 'KeyK') {
+      // Phase 14: the 34-rung ladder
+      if (
+        mode === 'play' &&
+        !panel.isOpen() &&
+        !isJournalOpen() &&
+        !recon.isActive() &&
+        !isExtracting()
+      ) {
+        if (isRankOpen()) closeRank();
+        else {
+          openRank();
+          playCue('ui');
+        }
+        syncLock();
+      }
+    } else if (code === 'KeyT') {
+      // Phase 14: rank / knowledge / powers / the climb
+      if (
+        mode === 'play' &&
+        !panel.isOpen() &&
+        !isJournalOpen() &&
+        !recon.isActive() &&
+        !isExtracting()
+      ) {
+        if (isProgressOpen()) closeProgress();
+        else {
+          openProgress();
+          playCue('ui');
+        }
+        syncLock();
+      }
     } else if (code === 'Escape') {
       // in clean play, Esc opens the pause menu (it also releases the mouse)
       if (
@@ -1179,7 +1317,9 @@ function handlePressed(codes) {
         !isExtracting() &&
         !isInspectOpen() &&
         !isMapOpen() &&
-        !isEquipmentOpen()
+        !isEquipmentOpen() &&
+        !isRankOpen() &&
+        !isProgressOpen()
       ) {
         openPause();
       }
@@ -1404,7 +1544,11 @@ function mapData() {
   return {
     layout: mapLayoutCache.data,
     player: p ? { x: p.x, z: p.z, yaw: player.facing ?? 0, speed: player.speed ?? 0 } : null,
-    discovery: { districts: [...discovery.districts], landmarks: [...discovery.landmarks] },
+    discovery: {
+      districts: [...discovery.districts],
+      landmarks: [...discovery.landmarks],
+      territories: [...discovery.territories],
+    },
     sources: (world?.memorySites?.sources ?? []).map((s) => ({
       id: s.id,
       name: s.name,
@@ -1412,7 +1556,36 @@ function mapData() {
       z: s.z,
       held: s.fragmentId ? memories.has(s.fragmentId) : false,
     })),
+    // Phase 10: the 34-rung ladder as map/minimap markers — rank-coloured,
+    // gold when cleared, the next target flagged, the Overlord a beacon
+    markers: territoryMarkers(),
   };
+}
+
+/** The ladder, projected for the map screens (docs/TECH-PLAN.md Phase 10). */
+function territoryMarkers() {
+  const cleared = combatState?.defeated ?? new Set();
+  const next = nextTarget(cleared);
+  return (spawner?.groupStatus?.() ?? [])
+    .map((g) => ({
+      id: g.id,
+      rank: g.rank,
+      name: g.name,
+      title: g.title,
+      district: g.district,
+      territory: g.territory,
+      x: g.x,
+      z: g.z,
+      members: g.members,
+      defeated: !!g.defeated,
+      next: next?.id === g.id,
+      boss: g.rank >= 34,
+      color: difficultyColor(g),
+      // discovery: hidden until charted — with two deliberate exceptions,
+      // you always know where to climb next and where the Overlord sits
+      shown: !!g.defeated || next?.id === g.id || g.rank >= 34 || discovery.hasTerritory(g.id),
+    }))
+    .filter((m) => m.shown);
 }
 
 /** Snapshot the equipment screen renders from (motes, effects). */
@@ -1421,6 +1594,42 @@ function gearData() {
     motes: progression.motes(motesCtx()),
     owned: [...progression.spent],
     effects: progression.effects(),
+  };
+}
+
+/** Snapshot the K ladder screen renders from (the 34-rung ledger). */
+function rankData() {
+  return {
+    defeated: combatState.defeated,
+    rankTitle: rankTitle(combatState.defeated.size),
+  };
+}
+
+/** Snapshot the T progression screen renders from (rank, knowledge, powers). */
+function progressData() {
+  const acts = ACTS.map((act) => {
+    const p = actProgress(act, combatState.defeated);
+    return {
+      n: act.n,
+      roman: ['I', 'II', 'III', 'IV'][act.n - 1] ?? String(act.n),
+      title: act.title,
+      done: p.done,
+      total: p.total,
+      cleared: p.cleared,
+    };
+  });
+  return {
+    rank: combatState.defeated.size,
+    rankTitle: rankTitle(combatState.defeated.size),
+    cleared: combatState.defeated.size,
+    charted: discovery.counts(),
+    knowledge: { ...combatState.knowledge },
+    knowledgeMax: { ...MAX_KNOWLEDGE },
+    powers: [...combatState.powers],
+    kills: combatState.kills,
+    steals: combatState.steals,
+    verdict: endingChoice(),
+    acts,
   };
 }
 
@@ -1441,6 +1650,7 @@ function doSaveGame() {
     discovery: discovery.snapshot(),
     progression: progression.snapshot(),
     combat: combatState.snapshot(), // V2: vitals, loadout, powers, the 34-rung ledger
+    ending: endingChoice(), // Phase 13: KEEP / RELEASE verdict
   });
   const r = writeSave(doc);
   toast(r.ok ? 'Game saved — checkpoint written' : `Save failed — ${r.error}`, 2800);
@@ -1474,6 +1684,7 @@ async function doLoadGame() {
   progression.applySnapshot(doc.progression);
   if (doc.combat) combatState.applySnapshot(doc.combat);
   else combatState.reset();
+  setEndingChoice(doc.ending ?? null); // Phase 13: the verdict survives reloads
   applyProgressionEffects();
   if (doc.seed) settings.seed = doc.seed;
   // older checkpoints carry no shape — keep whatever the page already had
@@ -1498,6 +1709,7 @@ async function doNewGame() {
   discovery.reset();
   progression.reset();
   combatState.reset(); // V2: a new game starts with bare fists and no ledger
+  resetEnding(); // Phase 13: a fresh walk owes no verdict
   deathT = 0;
   applyProgressionEffects();
   lastDistrict = ''; // the spawn district gets its "charted" beat again
@@ -1517,6 +1729,9 @@ async function doNewGame() {
 
 let statTimer = 0;
 let lastDistrict = '';
+let bossSealToast = false; // Phase 13: the arena-sealed toast speaks once
+let bossSealArmed = false; // the ring walls off *exits* only once you're inside it
+const ARENA_R = 26; // metres — the Overlord's sealed ring
 const pivotTarget = new THREE.Vector3();
 
 app.onUpdate((dt, _app, rawDtIn) => {
@@ -1574,6 +1789,14 @@ app.onUpdate((dt, _app, rawDtIn) => {
   } else if (isEquipmentOpen()) {
     // I / Esc close the loadout
     for (const code of pressed.slice()) equipmentHandleKey(code);
+    pressed.length = 0;
+  } else if (isRankOpen()) {
+    // K / Esc close the ladder; every other key is swallowed while open
+    for (const code of pressed.slice()) rankHandleKey(code);
+    pressed.length = 0;
+  } else if (isProgressOpen()) {
+    // T / Esc close the climb; every other key is swallowed while open
+    for (const code of pressed.slice()) progressHandleKey(code);
     pressed.length = 0;
   } else if (panel.isOpen()) {
     // the settings panel takes every key: Esc closes it (P already did),
@@ -1665,8 +1888,45 @@ app.onUpdate((dt, _app, rawDtIn) => {
       );
     }
 
+    // ---- Phase 13: the Overlord's arena seals while he stands -----------
+    // A soft radial clamp around his anchor — he fights you inside the ring
+    // he chose, and the walk out of it is walled off until he falls.
+    // The wall only exists once you've *entered* the ring (bossSealArmed):
+    // merely standing alive/streamed-in near another landmark (the warden
+    // plaza sits 35 m out) must never drag the player out of it.
+    {
+      const bf = spawner.fighters.find((f) => f.isOverlord && f.alive && f.dying === 0);
+      const anchor = bf ? spawner.anchors.find((a) => a.group.id === BOSS_ID) : null;
+      if (bf && anchor) {
+        const dx = player.position.x - anchor.x;
+        const dz = player.position.z - anchor.z;
+        const d = Math.hypot(dx, dz);
+        if (d <= ARENA_R) bossSealArmed = true; // you stepped in — now the way out is walled
+        if (bossSealArmed && d > ARENA_R) {
+          const k = ARENA_R / d;
+          player.position.x = anchor.x + dx * k;
+          player.position.z = anchor.z + dz * k;
+          if (!bossSealToast) {
+            bossSealToast = true;
+            spawnCombatEvent('ARENA SEALED', 'bad');
+            toast('The arena seals — he will not chase you out', 3000);
+          }
+        } else if (d < ARENA_R * 0.8) {
+          bossSealToast = false; // back inside: the wall may speak again
+        }
+      } else {
+        bossSealToast = false;
+        bossSealArmed = false; // he fell (or never stood) — the ring is open ground
+      }
+    }
+
     // combat HUD — change-driven, so this is a few comparisons per frame
     const tgt = combat.lockOn;
+    // Phase 13: the Overlord gets his own bar whenever he stands (not just
+    // when locked on) — hp, phase title and the posture hairline under it
+    const bossF = spawner.fighters.find(
+      (f) => f.isOverlord && f.dying === 0 && f.hp > 0 && f.state !== 'subdued',
+    );
     updateCombatHud({
       hp: combatState.hp,
       maxHp: combatState.maxHp,
@@ -1676,6 +1936,17 @@ app.onUpdate((dt, _app, rawDtIn) => {
       weapon: WEAPON_BY_ID[combatState.weaponId]?.name ?? '',
       rank: combatState.defeated.size,
       rankTitle: rankTitle(combatState.defeated.size),
+      boss: bossF
+        ? {
+            name: bossF.group.name,
+            phase: bossF._phase ?? 1,
+            phaseTitle: bossF.phaseTitle ?? 'THE WALL',
+            hp: bossF.hp,
+            maxHp: bossF.maxHp,
+            posture: bossF.posture,
+            maxPosture: bossF.maxPosture,
+          }
+        : null,
       target: tgt
         ? {
             name: `${tgt.group.name} · ${tgt.group.members?.leader ?? `Rank ${tgt.group.rank}`}`,
@@ -1703,6 +1974,7 @@ app.onUpdate((dt, _app, rawDtIn) => {
         sprinting: player.speed > 4.0,
         extracting: !!extracting,
         ability: memories.abilityState().active,
+        crouching: !!player.crouching, // Phase 11: low profile shrinks detection
       };
       life.update(dt, elapsed, p, lctx);
       updateStealthHud(stealth.update(life.profiles(), lctx));
@@ -1772,6 +2044,59 @@ app.onUpdate((dt, _app, rawDtIn) => {
     nm.offset.y = (nm.offset.y + dt * 0.02) % 1;
   }
 
+  // Phase 10 — discovery rules: a territory charts the moment you cross its
+  // border, and Resonance Sight (V) sweeps the rungs around you out to
+  // 120 m. Runs every frame so a slow renderer can never miss a crossing;
+  // once the ladder is fully charted this loop is pure Set lookups.
+  if (mode === 'play' && player && spawner?.anchors?.length) {
+    const pv = player.position;
+    let vision; // resolved on the first uncharted anchor, only if one exists
+    for (const a of spawner.anchors) {
+      const id = a.group.id;
+      if (discovery.hasTerritory(id)) continue;
+      if (vision === undefined) vision = memories.abilityState().active;
+      const range = vision ? 120 : 34;
+      const dx = a.x - pv.x;
+      const dz = a.z - pv.z;
+      if (dx * dx + dz * dz <= range * range && discovery.visitTerritory(id) && !vision) {
+        toast(`Territory charted — ${a.group.name}`, 2400);
+      }
+    }
+  }
+
+  /* Phase 11 — Resonance Sight projects rank/crown/aura markers while V
+     burns; the overlay clears the frame the ability ends or an overlay
+     borrows the screen (docs/TECH-PLAN.md §11). */
+  const visBurning = mode === 'play' && !!player && !anyOverlayOpen() && memories.abilityState().active;
+  if (visBurning) {
+    const visLeaders = new Map(); // crew id → lowest index still standing
+    for (const f of spawner.fighters) {
+      if (f.dying > 0 || f.hp <= 0) continue;
+      const cur = visLeaders.get(f.group.id);
+      if (cur === undefined || f.index < cur) visLeaders.set(f.group.id, f.index);
+    }
+    const visTargets = [];
+    for (const f of spawner.fighters) {
+      if (f.dying > 0 || f.hp <= 0) continue;
+      const g = f.group;
+      const boss = g.rank >= 34;
+      visTargets.push({
+        x: f.x,
+        y: (f.y ?? 0) + (boss ? 2.9 : 1.95),
+        z: f.z,
+        rank: g.rank,
+        color: difficultyColor(g),
+        boss,
+        elite: g.difficulty >= 4,
+        leader: visLeaders.get(g.id) === f.index,
+        subdued: f.state === 'subdued',
+      });
+    }
+    updateVision({ active: true, targets: visTargets });
+  } else {
+    updateVision(null);
+  }
+
   statTimer -= dt;
   if (statTimer <= 0) {
     statTimer = 0.25;
@@ -1786,6 +2111,8 @@ app.onUpdate((dt, _app, rawDtIn) => {
     weatherTick(((wxNow - lastWeatherAt) || 250) / 1000);
     lastWeatherAt = wxNow;
     updateClockHud();
+    // stolen-power slots are change-driven inside; 8 Hz is plenty (Phase 11)
+    updatePowerSlots(combatState.powers);
 
     const info = app.renderInfo;
     const p = mode === 'play' && player ? player.position : app.camera.position;
@@ -2206,6 +2533,8 @@ window.__MT_ABILITY__ = () => ({
   echoes: world?.memorySites?.echoesOn() ?? false,
   echoesTotal: world?.memorySites?.echoCount() ?? 0,
 });
+/** Phase 11 — Resonance Sight marker overlay (rank/crown/aura projections). */
+window.__MT_VISION__ = () => ({ ...visionState(), ability: memories.abilityState().active });
 window.__MT_SECRET__ = () => world?.memorySites?.secretState() ?? null;
 window.__MT_CLUE__ = (targetId) => world?.memorySites?.clueRevealed(targetId) ?? false;
 window.__MT_DEDUCE__ = (pairId, believedId) => memories.setDeduction(pairId, believedId);
@@ -2288,6 +2617,28 @@ window.__MT_GEAR__ = (open) => {
   }
   return equipmentSnapshot();
 };
+// Phase 14: force open/close or read the 34-rung ladder (K)
+window.__MT_RANK__ = (open) => {
+  if (open === true && !isRankOpen()) {
+    openRank();
+    syncLock();
+  } else if (open === false && isRankOpen()) {
+    closeRank();
+    syncLock();
+  }
+  return rankScreenSnapshot();
+};
+// Phase 14: force open/close or read the climb (T)
+window.__MT_PROGRESS__ = (open) => {
+  if (open === true && !isProgressOpen()) {
+    openProgress();
+    syncLock();
+  } else if (open === false && isProgressOpen()) {
+    closeProgress();
+    syncLock();
+  }
+  return progressScreenSnapshot();
+};
 // pause menu state (open/close, confirm box, button list)
 window.__MT_PAUSE__ = (open) => {
   if (open === true && !isPauseOpen()) openPause();
@@ -2331,6 +2682,25 @@ window.__MT_COMBAT__ = () => ({
 window.__MT_FIGHTERS__ = () => spawner.snapshot();
 // all 34 territory anchors: position, active/defeated flags, member count
 window.__MT_GROUPS__ = () => spawner.groupStatus();
+/** Phase 10 discovery — what the map knows (smoke proves the reveal rules). */
+window.__MT_DISCOVERY__ = () => {
+  const d = discovery.snapshot();
+  return { districts: d.districts, landmarks: d.landmarks, territories: d.territories };
+};
+/** Phase 12 — the story card a Requital opens (probe-combat reads facets). */
+window.__MT_STORY__ = () => storyCardState();
+/** Phase 13 — the Overlord: spawn state, phases, recovery windows. */
+window.__MT_BOSS__ = (patch) => {
+  const bf = spawner.fighters.find((f) => f.isOverlord);
+  if (!bf) return { exists: false };
+  if (patch && Number.isFinite(patch.hpRatio)) {
+    bf.hp = Math.max(1, Math.min(bf.maxHp, Math.round(bf.maxHp * patch.hpRatio)));
+    bf._syncPhase(); // announce the phase shift immediately for tests
+  }
+  return { exists: true, ...bf.bossSnapshot() };
+};
+/** Phase 13 — the KEEP/RELEASE verdict state. */
+window.__MT_ENDING__ = () => endingState();
 // the Requital channel as the HUD shows it (progress, prompt, ring)
 window.__MT_STEAL__ = () => ({
   ...steal.snapshot(),

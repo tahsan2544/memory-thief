@@ -35,6 +35,11 @@ function cache() {
     targetFill: document.getElementById('combat-target-fill'),
     targetSub: document.getElementById('combat-target-sub'),
     rank: document.getElementById('combat-rank'),
+    boss: document.getElementById('combat-boss'),
+    bossName: document.getElementById('combat-boss-name'),
+    bossPhase: document.getElementById('combat-boss-phase'),
+    bossFill: document.getElementById('combat-boss-fill'),
+    bossPosture: document.getElementById('combat-boss-posture-fill'),
     floats: document.getElementById('combat-floats'),
     events: document.getElementById('combat-events'),
   };
@@ -66,6 +71,7 @@ export function setCombatHudVisible(on) {
  * @param {string} view.style name · view.weapon name
  * @param {number} view.rank · view.rankTitle
  * @param {object|null} view.target { name, sub, hp, maxHp }
+ * @param {object|null} view.boss { name, phase, phaseTitle, hp, maxHp, posture, maxPosture }
  */
 export function updateCombatHud(view) {
   const e = cache();
@@ -100,6 +106,26 @@ export function updateCombatHud(view) {
   if (e.rank) {
     const t = `RANK ${view.rank} · ${view.rankTitle}`;
     if (e.rank.textContent !== t) e.rank.textContent = t;
+  }
+
+  // ---- boss bar (Phase 13) ----------------------------------------------
+  const boss = view.boss;
+  if (boss) {
+    if (e.boss?.classList.contains('hidden')) e.boss.classList.remove('hidden');
+    const bt = `${boss.name.toUpperCase()}`;
+    if (e.bossName && e.bossName.textContent !== bt) e.bossName.textContent = bt;
+    const bp = `PHASE ${boss.phase} · ${boss.phaseTitle}`;
+    if (e.bossPhase && e.bossPhase.textContent !== bp) e.bossPhase.textContent = bp;
+    if (e.bossFill) {
+      const w = pct(boss.hp, boss.maxHp);
+      if (e.bossFill.style.width !== w) e.bossFill.style.width = w;
+    }
+    if (e.bossPosture) {
+      const w = pct(boss.posture, boss.maxPosture);
+      if (e.bossPosture.style.width !== w) e.bossPosture.style.width = w;
+    }
+  } else if (e.boss && !e.boss.classList.contains('hidden')) {
+    e.boss.classList.add('hidden');
   }
 
   // ---- target plate ----------------------------------------------------

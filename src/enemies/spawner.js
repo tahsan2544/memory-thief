@@ -18,6 +18,7 @@ import * as THREE from 'three';
 import { GROUPS, GROUP_BY_ID } from './groups.js';
 import { DIFFICULTY_COLORS, rankTitle } from './ranking.js';
 import { Fighter } from './fighter.js';
+import { Overlord } from './boss_overlord.js';
 
 export const ACTIVATE_RANGE = 46;
 export const DESPAWN_RANGE = 70;
@@ -63,6 +64,10 @@ export class Spawner {
       onAlert: (f) => this.cb.onAlert?.(f),
       onBlink: (f) => this.cb.onBlink?.(f),
       onEnemySwing: (f, res) => this.cb.onEnemySwing?.(f, res),
+      // Phase 13 — the Overlord's phase machine + recovery windows
+      onBossPhase: (f, phase, prev, title) => this.cb.onBossPhase?.(f, phase, prev, title),
+      onBossWindow: (f) => this.cb.onBossWindow?.(f),
+      getPowerHues: () => this.cb.getPowerHues?.() ?? [],
       markDead: (f) => this._remove(f),
       spawnProjectile: (f, target, dmg, opts) => this._spawnProjectile(f, target, dmg, opts),
     };
@@ -168,8 +173,12 @@ export class Spawner {
     const wanted = cands.slice(0, ACTIVE_GROUPS).map((c) => c.a);
     for (const a of this.anchors) a.active = wanted.includes(a);
 
-    // despawn groups that fell out of range
+    // despawn groups that fell out of range — but never a subdued body:
+    // the Requital is the ladder's whole economy, and a body that streamed
+    // out from under the glove (death → respawn across the city) would take
+    // the steal with it, soft-locking the climb. Downed waits for its thief.
     for (const f of [...this.fighters]) {
+      if (f.stealable) continue;
       const a = this.anchors.find((an) => an.group === f.group);
       if (!a || !a.active) {
         const d = Math.hypot(f.x - playerPos.x, f.z - playerPos.z);
@@ -234,7 +243,9 @@ export class Spawner {
         sz = anchor.z + Math.sin(a + k) * (r * 0.6);
       }
     }
-    const f = new Fighter({ group, index: n + i, x: sx, z: sz, ctx: this.ctx });
+    // Phase 13: the Overlord is his own class (3-phase FSM, telegraph rings)
+    const Kind = group.encounter === 'boss' ? Overlord : Fighter;
+    const f = new Kind({ group, index: n + i, x: sx, z: sz, ctx: this.ctx });
     this.fighters.push(f);
     return f;
   }
@@ -409,6 +420,7 @@ export class Spawner {
       title: rankTitle(a.group.rank),
       district: a.group.district,
       territory: a.group.territory,
+      difficulty: a.group.difficulty, // map pins colour by it (Phase 10)
       x: Math.round(a.x),
       z: Math.round(a.z),
       active: a.active,

@@ -14,7 +14,8 @@ import { POWER_BY_ID } from '../powers/powers.js';
 import { GROUP_BY_ID } from '../enemies/groups.js';
 import { deriveStats } from './stats.js';
 
-const MAX_KNOWLEDGE = { hp: 220, atk: 30, def: 40 };
+/** Ceiling on the knowledge a Requital can bank — the T screen shows it. */
+export const MAX_KNOWLEDGE = { hp: 220, atk: 30, def: 40 };
 
 export class PlayerCombatState {
   constructor() {

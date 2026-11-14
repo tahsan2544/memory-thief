@@ -150,18 +150,22 @@ export class NpcAgent {
 
   /**
    * @param {{x:number,z:number,cover:boolean,sprinting:boolean,extracting:boolean,
-   *          ability:boolean,zone:object|null, suspicious:boolean}} ctx
+   *          ability:boolean,zone:object|null, crouching?:boolean}} ctx
    */
   perceive(ctx, now, wdt) {
     const dx = ctx.x - this.x;
     const dz = ctx.z - this.z;
     const d = Math.hypot(dx, dz);
+    // Phase 11 — low-profile crouch: a crouched body is simply harder to
+    // pick out of the street, so the eyes that find you must be much
+    // closer (detection range drops ~55%, docs/GAME-DESIGN.md §10)
+    const viewR = this.spec.viewRadius * (ctx.crouching ? 0.45 : 1);
 
     let seen = false;
     let los = false;
     let ang = 0;
     let half = 0;
-    if (d < this.spec.viewRadius && !ctx.cover) {
+    if (d < viewR && !ctx.cover) {
       // suspicion widens the cone: a watchful agent turns more of its head
       half = this.spec.fov / 2 + Math.min(0.7, this.awareness * 0.9);
       ang = d > 0.7 ? Math.abs(angleDelta(Math.atan2(dx, dz), this.yaw)) : 0;
@@ -177,7 +181,7 @@ export class NpcAgent {
       ang,
       half,
       los,
-      radius: d < this.spec.viewRadius,
+      radius: d < viewR,
       cover: !!ctx.cover,
     };
 
@@ -186,7 +190,7 @@ export class NpcAgent {
       this.lastSeenAt = now;
       this.lastKnown = { x: ctx.x, z: ctx.z };
 
-      let rate = 0.1 + 0.55 * (1 - d / this.spec.viewRadius);
+      let rate = 0.1 + 0.55 * (1 - d / viewR);
       let mult = 1;
       if (ctx.extracting) mult += 2.0;
       else if (ctx.sprinting) mult += 0.8;

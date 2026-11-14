@@ -511,7 +511,7 @@ export function buildCityLife({ layout, colliders, interactables, memorySites, p
      * @param {number} t elapsed simulation seconds (render frame — unused)
      * @param {{x:number,y:number,z:number}} playerPos
      * @param {{cover:boolean, sprinting:boolean, extracting:boolean,
-     *          ability:boolean, zone:object|null}} ctx
+     *          ability:boolean, zone:object|null, crouching?:boolean}} ctx
      */
     update(dt, t, playerPos, ctx) {
       const now = performance.now();
@@ -524,6 +524,9 @@ export function buildCityLife({ layout, colliders, interactables, memorySites, p
         sprinting: !!ctx.sprinting,
         extracting: !!ctx.extracting,
         ability: !!ctx.ability,
+        // Phase 11 — crouch is stealth, not suspicion: it never flags the
+        // meter, it only shrinks the radius you can be seen from
+        crouching: !!ctx.crouching,
         zone: ctx.zone ?? null,
         suspicious: !!ctx.sprinting || !!ctx.extracting || !!ctx.ability || !!ctx.zone,
       };
