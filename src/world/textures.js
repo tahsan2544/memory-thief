@@ -262,7 +262,10 @@ function drawWall(ctx, style, tint, rng, size) {
 
 function drawWindows(ctx, ectx, style, tint, rng, size, emModule) {
   const m = MODULE_PX;
-  const litCool = [0x9fd8ff, 0xbfe6ff, 0xdff1ff];
+  // cool panes pulled down from near-white (0xdff1ff clipped to a flat white
+  // blob through bloom): same icy read, but the pane keeps its hue and the
+  // mullions stay visible inside the lit glass
+  const litCool = [0x7fb4e6, 0x9cc9ef, 0xb7ddf7];
   const litWarm = [0xffc27a, 0xffa640, 0xffd9a0];
 
   const cfg = {

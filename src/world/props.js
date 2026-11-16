@@ -431,6 +431,10 @@ export function placeSignPosts(layout, placer, propDensity) {
 }
 
 function glowTint(hex) {
+  // lamp heads are toneMapped:false, so anything well above 1.0 clips to a
+  // white core and blooms into a halo over the street. A gentle ×1.4 (clamped
+  // at 1.6) keeps the district neon hue in the lamp and a modest bloom kick,
+  // without the blown-out flare.
   const c = new THREE.Color(hex);
-  return [Math.min(2.6, c.r * 2.3), Math.min(2.6, c.g * 2.3), Math.min(2.6, c.b * 2.3)];
+  return [Math.min(1.6, c.r * 1.4), Math.min(1.6, c.g * 1.4), Math.min(1.6, c.b * 1.4)];
 }
