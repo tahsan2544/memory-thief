@@ -389,6 +389,7 @@ initMemoryUI({
       toast('That record cannot be weighed yet', 1800);
     }
   },
+  onClose: () => syncLock(), // journal ✕ behaves like the J/Escape close
 });
 
 initStealthHud();
@@ -594,6 +595,10 @@ initEquipmentScreen({
       renderEquipment();
     } else if (res.reason === 'motes') {
       toast('Not enough resonance motes', 2200);
+    } else if (res.reason === 'owned') {
+      toast('Already installed — the glove already reads it', 2200);
+    } else {
+      toast('That upgrade is not on the ledger', 2200);
     }
   },
   onClose: () => syncLock(),
@@ -1123,6 +1128,7 @@ app.renderer.domElement.addEventListener('click', () => {
 app.renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 
 const panel = initPanel({
+  onClose: () => syncLock(), // panel ✕ behaves like the Esc/P close
   onFog: (far) => {
     app.setFog(far * fogMulApplied); // keep the weather's thickness on top
     if (recon.isActive()) atmosphereDirty = true; // the replay's restore must not revert it

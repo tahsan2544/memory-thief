@@ -59,7 +59,10 @@ export class App {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.12;
+    // 1.05 (was 1.12): ACES was pushing lit windows and neon past the knee of
+    // the curve into flat white — a hair less exposure keeps highlight detail
+    // so the texture reads through the light instead of under it
+    this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = this.settings.shadows && q.shadows;
     // PCFSoftShadowMap was removed upstream; PCF is the shipping filter and is
     // requested explicitly so three never logs a deprecation for an enum that

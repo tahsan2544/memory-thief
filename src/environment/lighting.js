@@ -42,7 +42,7 @@ export function createLighting(scene, layout, settings, quality) {
   // silhouettes so characters and kerbs separate from the dark background.
   // It casts no shadow (it exists only to catch edges) and costs nothing in
   // the point-light budget because it is directional, not a point light.
-  const rim = new THREE.DirectionalLight(PALETTE.moonlight, 0.62);
+  const rim = new THREE.DirectionalLight(PALETTE.moonlight, 0.5);
   rim.castShadow = false;
   group.add(rim);
   group.add(rim.target);
@@ -160,8 +160,11 @@ export function createLighting(scene, layout, settings, quality) {
     dir.shadow.map = null;
     setShadowEnabled(settings.shadows && q.shadows);
 
-    districtLights.forEach((l) => { l.userData.baseIntensity = 280; });
-    landmarkLights.forEach((l) => { l.userData.baseIntensity = 165; });
+    // accent wash pulled back: at 280/165 with decay 1 these flattened whole
+    // districts into a uniform glow — 185/115 keeps the warm/cool contrast
+    // between neighbourhoods without burying the facades under light
+    districtLights.forEach((l) => { l.userData.baseIntensity = 185; });
+    landmarkLights.forEach((l) => { l.userData.baseIntensity = 115; });
     budget = { district: q.districtLights ?? 0, landmark: q.landmarkLights ?? 0 };
     refreshLights(lastPos); // re-pick immediately at the new budget
   }

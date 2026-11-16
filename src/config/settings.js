@@ -51,9 +51,12 @@ export const QUALITY_PRESETS = {
     moteCount: 240,
     maxAnisotropy: 4,
     bloom: true,
-    bloomStrength: 0.55,
-    bloomRadius: 0.6,
-    bloomThreshold: 0.8,
+    // gentler bloom than the first pass: a high threshold keeps lit windows
+    // and neon reading as *sources* instead of clipping into white blobs, so
+    // the texture underneath stays visible through the glow
+    bloomStrength: 0.35,
+    bloomRadius: 0.5,
+    bloomThreshold: 0.85,
     contactShadows: true,
   },
   high: {
@@ -72,9 +75,9 @@ export const QUALITY_PRESETS = {
     moteCount: 460,
     maxAnisotropy: 8,
     bloom: true,
-    bloomStrength: 0.78,
-    bloomRadius: 0.72,
-    bloomThreshold: 0.72,
+    bloomStrength: 0.5,
+    bloomRadius: 0.55,
+    bloomThreshold: 0.82,
     contactShadows: true,
   },
 };

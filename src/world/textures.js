@@ -144,8 +144,28 @@ function buildFacade(style, seedKey) {
   drawWall(ctx, style, tint, rng, size);
   drawWindows(ctx, ectx, style, tint, rng, size, emModule);
 
-  stains(ctx, size, size, rng, 0x05070c, 0.16, 14);
-  speckle(ctx, size, size, rng, 0.05, 900, 50);
+  // baked weathering: rain-shadow streaks falling from the roofline, then a
+  // grime band where the wall meets the street (splash-back + dust). Painted
+  // over the windows so the glass reads as set *into* a dirty wall; the
+  // emissive map is separate and untouched, so lit rooms stay lit.
+  for (let i = 0; i < 26; i++) {
+    const x = rng.range(0, size);
+    const w = rng.range(3, 16);
+    const h = rng.range(size * 0.1, size * 0.38);
+    const sg = ctx.createLinearGradient(0, 0, 0, h);
+    sg.addColorStop(0, rgba(0x02040a, rng.range(0.1, 0.22)));
+    sg.addColorStop(1, rgba(0x02040a, 0));
+    ctx.fillStyle = sg;
+    ctx.fillRect(x, 0, w, h);
+  }
+  const grime = ctx.createLinearGradient(0, size * 0.6, 0, size);
+  grime.addColorStop(0, rgba(0x02040a, 0));
+  grime.addColorStop(1, rgba(0x02040a, 0.4));
+  ctx.fillStyle = grime;
+  ctx.fillRect(0, size * 0.6, size, size * 0.4);
+
+  stains(ctx, size, size, rng, 0x05070c, 0.2, 18);
+  speckle(ctx, size, size, rng, 0.07, 1300, 55);
 
   const map = toTexture(mapCanvas);
   const emissiveMap = toTexture(emCanvas);
@@ -525,7 +545,7 @@ function buildAsphalt() {
 
   ctx.fillStyle = '#0d0f14';
   ctx.fillRect(0, 0, size, size);
-  speckle(ctx, size, size, rng, 0.1, 5200, 70);
+  speckle(ctx, size, size, rng, 0.13, 6500, 75);
   stains(ctx, size, size, rng, 0x04060a, 0.5, 16);
   // faint tyre polish lanes
   const g = ctx.createLinearGradient(0, 0, size, 0);
@@ -552,6 +572,47 @@ function buildAsphalt() {
     ctx.stroke();
   }
 
+  // tar-seam repairs — every old street has its snake of fresh bitumen
+  for (let i = 0; i < 3; i++) {
+    ctx.strokeStyle = 'rgba(3,4,6,0.55)';
+    ctx.lineWidth = rng.range(5, 9);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    let x = rng.range(size * 0.18, size * 0.82);
+    let y = rng.range(size * 0.18, size * 0.82);
+    ctx.moveTo(x, y);
+    for (let s = 0; s < 5; s++) {
+      x += rng.range(-85, 85);
+      y += rng.range(-85, 85);
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  // oil / fluid staining
+  for (let i = 0; i < 9; i++) {
+    const x = rng.range(size * 0.08, size * 0.92);
+    const y = rng.range(size * 0.08, size * 0.92);
+    const r = rng.range(10, 42);
+    const og = ctx.createRadialGradient(x, y, 0, x, y, r);
+    og.addColorStop(0, 'rgba(2,3,5,0.5)');
+    og.addColorStop(0.6, 'rgba(2,3,5,0.22)');
+    og.addColorStop(1, 'rgba(2,3,5,0)');
+    ctx.fillStyle = og;
+    ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  // patched utility cuts — a rectangle of newer, darker bitumen
+  for (let i = 0; i < 2; i++) {
+    const w = rng.range(50, 120);
+    const h = rng.range(30, 70);
+    const x = rng.range(size * 0.1, size * 0.9 - w);
+    const y = rng.range(size * 0.1, size * 0.9 - h);
+    ctx.fillStyle = 'rgba(6,7,10,0.55)';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, w, h);
+  }
+
   // roughness: puddles are smooth (dark), worn asphalt is rough (light)
   rctx.fillStyle = '#c8c8c8';
   rctx.fillRect(0, 0, size, size);
@@ -574,8 +635,16 @@ function buildConcrete() {
   const rng = createRng('concrete');
   const size = 512;
   const { c, ctx } = makeCanvas(size, size);
-  ctx.fillStyle = '#1a1d25';
+  const base = 0x1a1d25;
+  ctx.fillStyle = shade(base, 0);
   ctx.fillRect(0, 0, size, size);
+  // every slab cured a slightly different tone — one flat grey reads as plastic
+  for (let sy = 0; sy < size; sy += 128) {
+    for (let sx = 0; sx < size; sx += 128) {
+      ctx.fillStyle = shade(base, rng.range(-8, 8));
+      ctx.fillRect(sx, sy, 128, 128);
+    }
+  }
   speckle(ctx, size, size, rng, 0.07, 4200, 60);
   stains(ctx, size, size, rng, 0x070a12, 0.4, 16);
   // pavement slab joints every 128px
@@ -586,6 +655,30 @@ function buildConcrete() {
   }
   ctx.fillStyle = 'rgba(255,255,255,0.03)';
   for (let i = 3; i <= size; i += 128) ctx.fillRect(i, 0, 1, size);
+  // hairline cracks wandering across the slabs
+  for (let i = 0; i < 10; i++) {
+    ctx.strokeStyle = `rgba(0,0,0,${rng.range(0.3, 0.55)})`;
+    ctx.lineWidth = rng.range(0.6, 1.6);
+    ctx.beginPath();
+    let x = rng.range(0, size);
+    let y = rng.range(0, size);
+    ctx.moveTo(x, y);
+    for (let s = 0; s < 5; s++) {
+      x += rng.range(-45, 45);
+      y += rng.range(-45, 45);
+      ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  // chipped corners: a few spots lost a bite of aggregate
+  for (let i = 0; i < 14; i++) {
+    const x = rng.range(0, size - 10);
+    const y = rng.range(0, size - 10);
+    ctx.fillStyle = `rgba(150,158,172,${rng.range(0.06, 0.16)})`;
+    ctx.beginPath();
+    ctx.ellipse(x, y, rng.range(2, 7), rng.range(2, 6), rng.range(0, 3), 0, Math.PI * 2);
+    ctx.fill();
+  }
   return { map: toTexture(c) };
 }
 
@@ -597,6 +690,14 @@ function buildMetal() {
   ctx.fillRect(0, 0, size, size);
   speckle(ctx, size, size, rng, 0.06, 1600, 55);
   stains(ctx, size, size, rng, 0x0a0d12, 0.35, 8);
+  // brushed finish: horizontal grain so trim and props catch the key light
+  for (let i = 0; i < 90; i++) {
+    const y = rng.range(0, size);
+    ctx.fillStyle = rng.chance(0.5)
+      ? rgba(0xffffff, rng.range(0.02, 0.06))
+      : rgba(0x000000, rng.range(0.03, 0.08));
+    ctx.fillRect(0, y, size, rng.range(0.5, 1.5));
+  }
   return { map: toTexture(c) };
 }
 

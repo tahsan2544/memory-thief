@@ -39,7 +39,7 @@ export class PostFX {
 
     // Half-resolution bloom by default: the blur is low-frequency, so paying
     // full screen res for it is wasted fill-rate on integrated GPUs.
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.6, 0.6, 0.8);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.4, 0.5, 0.85);
     this.composer.addPass(this.bloom);
 
     // Tone map + colour-space conversion happen here (and only here) while
@@ -51,9 +51,9 @@ export class PostFX {
   applyQuality(q) {
     this.enabled = !!q.bloom;
     if (!this.enabled) return;
-    this.bloom.strength = q.bloomStrength ?? 0.6;
-    this.bloom.radius = q.bloomRadius ?? 0.6;
-    this.bloom.threshold = q.bloomThreshold ?? 0.8;
+    this.bloom.strength = q.bloomStrength ?? 0.35;
+    this.bloom.radius = q.bloomRadius ?? 0.5;
+    this.bloom.threshold = q.bloomThreshold ?? 0.85;
   }
 
   resize(width, height, pixelRatio) {

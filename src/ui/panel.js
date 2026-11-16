@@ -92,7 +92,12 @@ export function initPanel(callbacks) {
     return !panel.classList.contains('hidden');
   }
 
-  $('panel-close').addEventListener('click', () => open(false));
+  // the ✕ mirrors the Esc/P close path exactly: close, then hand the mouse
+  // back through the same syncLock the keyboard routes use (main.js wires it)
+  $('panel-close').addEventListener('click', () => {
+    open(false);
+    callbacks.onClose?.();
+  });
 
   $('set-random').addEventListener('click', () => {
     seedInput.value = randomSeed();

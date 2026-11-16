@@ -48,7 +48,7 @@ export function createMaterials() {
         normalMap: facadeNormal,
         normalScale: new THREE.Vector2(d.facadeStyle === 'glass' ? 0.22 : 0.45, d.facadeStyle === 'glass' ? 0.22 : 0.45),
         emissive: new THREE.Color(d.emissive),
-        emissiveIntensity: 1.15,
+        emissiveIntensity: 0.95,
         roughness: d.facadeStyle === 'glass' ? 0.34 : 0.78,
         metalness: d.facadeStyle === 'glass' ? 0.22 : 0.04,
         envMapIntensity: d.facadeStyle === 'glass' ? 1.15 : 0.6,
@@ -81,7 +81,7 @@ export function createMaterials() {
     normalScale: new THREE.Vector2(0.65, 0.65),
     roughness: 0.6,
     metalness: 0.2,
-    envMapIntensity: 1.35,
+    envMapIntensity: 1.15, // wet-street sheen without the mirror glare
   });
 
   m.ground = standard({
@@ -108,7 +108,7 @@ export function createMaterials() {
       map: atlas,
       emissiveMap: atlas,
       emissive: new THREE.Color(0xffffff),
-      emissiveIntensity: 1.25,
+      emissiveIntensity: 1.05,
       roughness: 0.5,
       metalness: 0.1,
     });
@@ -157,7 +157,7 @@ export function createMaterials() {
       map: tex,
       emissiveMap: tex,
       emissive: new THREE.Color(0xffffff),
-      emissiveIntensity: key === 'platePoster' ? 0.35 : 1.3,
+      emissiveIntensity: key === 'platePoster' ? 0.35 : 1.1,
       roughness: 0.7,
       metalness: 0.0,
       side: key === 'platePoster' ? THREE.FrontSide : THREE.FrontSide,
@@ -214,7 +214,7 @@ export function createMaterials() {
 export function setWet(materials, wet) {
   if (materials.road) {
     materials.road.roughness = wet ? 0.6 : 1.0;
-    materials.road.envMapIntensity = wet ? 1.35 : 0.35;
+    materials.road.envMapIntensity = wet ? 1.15 : 0.35;
     materials.road.metalness = wet ? 0.2 : 0.02;
     materials.road.needsUpdate = false;
   }

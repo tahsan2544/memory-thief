@@ -2906,3 +2906,264 @@ body.reduce-flicker .hot-slot.flash { animation: none; }
   .rank-row { grid-template-columns: 28px 1fr 64px 64px; gap: 6px; padding: 5px 12px; }
   .rank-act-head { padding: 6px 12px; }
 }
+
+/* ======================================================================
+   BUTTON POLISH — one interactive language for every control.
+   hover · press · focus · cursor · touch targets · small screens.
+   Gate-safe: the headless suites run at 800×600 with a fine pointer, so
+   none of the media rules below apply to them — and no button id, label
+   or disabled semantic changes anywhere.
+   ====================================================================== */
+
+button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* one visible focus ring for every button that doesn't roll its own glow
+   (.welcome-start / .ending-btn keep their outline:none + shadow — a class
+   beats the element selector, so they opt out on their own) */
+button:focus-visible {
+  outline: 2px solid rgba(99, 215, 255, 0.85);
+  outline-offset: 2px;
+}
+
+/* press: a small, uniform dip so every click acknowledges itself */
+.welcome-start:active,
+.ending-btn:active,
+.journal-activate:active,
+.con-tag:active,
+.gear-buy:active:not(:disabled),
+.pause-nav button:active:not(:disabled),
+.pause-confirm button:active,
+.panel-actions button:active,
+.field .row button:active,
+.journal-head button:active,
+.map-head button:active,
+.gear-head button:active,
+.panel-head button:active {
+  transform: translateY(1px);
+}
+.journal-item:active {
+  background: rgba(38, 52, 94, 0.7);
+}
+
+/* the one button family that had no hover at all */
+.panel-head button:hover {
+  color: #fff;
+}
+
+/* ---- touch: nothing tappable below 44px on a coarse pointer ---------- */
+@media (pointer: coarse) {
+  .panel-head button,
+  .journal-head button,
+  .map-head button,
+  .gear-head button {
+    width: 44px;
+    height: 44px;
+  }
+  .welcome-start,
+  .ending-btn,
+  .journal-activate,
+  .con-tag,
+  .gear-buy,
+  .pause-nav button,
+  .pause-confirm button,
+  .panel-actions button,
+  .field .row button {
+    min-height: 44px;
+  }
+}
+
+/* ---- small screens: cards fill the glass, columns stack --------------- */
+@media (max-width: 560px) {
+  .pause-card {
+    width: calc(100vw - 20px);
+    padding: 20px 16px;
+  }
+  .pause-nav button,
+  .pause-confirm-actions button {
+    text-align: center;
+  }
+  .panel {
+    width: min(300px, 92vw);
+  }
+  .journal {
+    inset: 0;
+  }
+  .journal-head {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+  .journal-cols {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 42%) minmax(0, 1fr);
+  }
+  .journal-list {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .map-frame,
+  .gear-frame,
+  .rank-frame,
+  .progress-frame {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+  }
+  .map-body {
+    flex-direction: column;
+  }
+  .map-canvas-wrap {
+    min-height: 0;
+    overflow: auto; /* the intrinsic 900px canvas scrolls, never scales —
+                       pin hit-testing is intrinsic-pixel based */
+  }
+  .map-detail {
+    width: auto;
+    max-height: 30vh;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+  .gear-cols {
+    grid-template-columns: 1fr;
+  }
+  .ending-choices {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ======================================================================
+   BUTTON SKIN — the material layer: top-lit sheen, accent hover glow,
+   press-in. Only background-image / box-shadow / filter / border-color /
+   color ever move here, never size or position — hit areas and the smoke
+   suite's coordinate clicks are untouched. Laid over each surface's own
+   accent (cyan = system, violet = journal, red = closes, amber/blue =
+   the ending hands), so every screen keeps its colour identity.
+   ====================================================================== */
+
+/* smooth every state change; families that already declare a transition
+   keep theirs extended below instead of losing their original props */
+button {
+  transition:
+    filter 0.12s ease,
+    transform 0.07s ease,
+    box-shadow 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease;
+}
+.field .row button,
+.panel-actions button {
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    filter 0.12s ease,
+    transform 0.07s ease,
+    box-shadow 0.16s ease;
+}
+.welcome-start {
+  transition:
+    box-shadow 0.18s ease,
+    border-color 0.18s ease,
+    filter 0.12s ease,
+    transform 0.07s ease;
+}
+.ending-btn {
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    filter 0.12s ease,
+    transform 0.07s ease,
+    box-shadow 0.16s ease;
+}
+
+/* top-lit bevel: every flat control gains a shared material sheen so a
+   row of buttons reads as machined parts, not painted rectangles */
+.pause-nav button,
+.pause-confirm button,
+.panel-actions button,
+.field .row button,
+.gear-buy,
+.journal-activate,
+.con-tag,
+.journal-item,
+.journal-head button,
+.map-head button,
+.gear-head button,
+.panel-head button {
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.06),
+    rgba(255, 255, 255, 0) 46%,
+    rgba(0, 0, 0, 0.16)
+  );
+}
+
+/* ---- hover accents, by colour family ---------------------------------- */
+/* cyan — welcome, pause, settings, buy */
+.welcome-start:hover,
+.welcome-start:focus-visible {
+  filter: brightness(1.12);
+}
+.pause-nav button:hover:not(:disabled),
+.pause-confirm button:hover,
+.panel-actions button:hover,
+.field .row button:hover,
+.gear-buy:hover:not(:disabled) {
+  filter: brightness(1.14);
+  box-shadow: 0 0 14px rgba(99, 215, 255, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+.panel-head button:hover {
+  box-shadow: 0 0 10px rgba(99, 215, 255, 0.3);
+}
+/* violet — the journal family */
+.journal-item:hover,
+.con-tag:hover,
+.journal-activate:hover:not(.disabled) {
+  filter: brightness(1.15);
+  box-shadow: 0 0 12px rgba(154, 123, 255, 0.2);
+}
+.journal-head button:hover {
+  filter: brightness(1.25);
+  box-shadow: 0 0 10px rgba(154, 123, 255, 0.3);
+}
+/* red — map / gear / ladder / climb closes */
+.map-head button:hover,
+.gear-head button:hover {
+  filter: brightness(1.3);
+  box-shadow: 0 0 10px rgba(255, 59, 71, 0.3);
+}
+/* the ending hands */
+.ending-keep:hover,
+.ending-keep:focus-visible {
+  filter: brightness(1.08);
+  box-shadow: 0 0 16px rgba(255, 176, 32, 0.28);
+}
+.ending-release:hover,
+.ending-release:focus-visible {
+  filter: brightness(1.08);
+  box-shadow: 0 0 16px rgba(99, 215, 255, 0.28);
+}
+
+/* ---- press-in: the click lands ----------------------------------------
+   listed AFTER the hover rules so, at equal specificity, pressing beats
+   hovering while the pointer is still over the button */
+.welcome-start:active,
+.ending-btn:active,
+.journal-activate:active:not(.disabled),
+.con-tag:active,
+.journal-item:active,
+.gear-buy:active:not(:disabled),
+.pause-nav button:active:not(:disabled),
+.pause-confirm button:active,
+.panel-actions button:active,
+.field .row button:active,
+.journal-head button:active,
+.map-head button:active,
+.gear-head button:active,
+.panel-head button:active,
+.touch-btn:active {
+  filter: brightness(0.9);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.45);
+}

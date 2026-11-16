@@ -30,11 +30,16 @@ let selectedId = null;
 let open = false;
 let lastManager = null;
 let siteRangeCache = null; // { fragmentId, inRange, sourceName }
-let callbacks = { onActivate: null, onDeduce: null, onSelect: null };
+let callbacks = { onActivate: null, onDeduce: null, onSelect: null, onClose: null };
 
 export function initMemoryUI(cbs = {}) {
   callbacks = { ...callbacks, ...cbs };
-  get('journal-close')?.addEventListener('click', () => closeJournal());
+  // the ✕ must do exactly what J/Escape do: close *and* hand the mouse back
+  // (main.js wires onClose → syncLock, the same call the key paths make)
+  get('journal-close')?.addEventListener('click', () => {
+    closeJournal();
+    callbacks.onClose?.();
+  });
   return { closeJournal };
 }
 
